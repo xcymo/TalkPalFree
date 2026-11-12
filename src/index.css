@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --surface-2: #f1efe9;
+  --text: #211f1c;
+  --muted: #7c766d;
+  --line: #e8e3da;
+  --brand: #5a5bd6;
+  --brand-strong: #4748c4;
+  --brand-soft: #eceafd;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #131211;
+  --surface: #1c1b19;
+  --surface-2: #262421;
+  --text: #f2efe9;
+  --muted: #a39d94;
+  --line: #312e2a;
+  --brand: #9b9af5;
+  --brand-strong: #b4b3ff;
+  --brand-soft: #272640;
+  color-scheme: dark;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+body {
+  @apply bg-bg font-sans text-ink antialiased;
+  margin: 0;
+  min-height: 100dvh;
+  overflow-wrap: break-word;
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+@layer utilities {
+  .pt-safe {
+    padding-top: max(1rem, env(safe-area-inset-top));
+  }
+  .pb-safe {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  .nav-safe {
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+  }
+  .bg-nav {
+    background-color: var(--surface);
+    background-color: color-mix(in srgb, var(--surface) 88%, transparent);
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+::selection {
+  background: var(--brand);
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

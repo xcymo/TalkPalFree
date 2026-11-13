@@ -6,7 +6,7 @@ import {
   useState,
   type ChangeEvent,
 } from 'react';
-import { ArrowRight, Keyboard, Loader2, Mic, Send } from 'lucide-react';
+import { ArrowRight, Keyboard, Mic, Send } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
 import { usePractice } from '../hooks/usePractice';
 import { useStickyBleed } from '../hooks/useStickyBleed';
@@ -32,6 +32,7 @@ export function PracticePage({ navigate }: PracticePageProps) {
     rounds,
     stage,
     error,
+    pendingUserText,
     freshRoundKey,
     sync,
     processRecording,
@@ -94,16 +95,36 @@ export function PracticePage({ navigate }: PracticePageProps) {
     return () => window.clearTimeout(timer);
   }, [error]);
 
-  // 文字提交成功后清空输入框；请求失败时保留原文方便重试。
+  // 提交后用户消息 / 语音占位气泡立即出现，跟着滚到底部
+  useEffect(() => {
+    if (stage === 'idle') return;
+    const timer = window.setTimeout(() => {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [stage, pendingUserText]);
+
+  // 文字发出后输入框已经清空；请求失败时把原文放回来方便重试
   useEffect(() => {
     if (submittedTextRef.current === null) return;
     const latest = rounds[rounds.length - 1];
     if (latest && latest.userText === submittedTextRef.current) {
-      setTextDraft('');
       submittedTextRef.current = null;
-      if (textareaRef.current) textareaRef.current.style.height = '';
+      return;
     }
-  }, [rounds]);
+    if (error) {
+      const text = submittedTextRef.current;
+      submittedTextRef.current = null;
+      setTextDraft(text);
+      window.requestAnimationFrame(() => {
+        const element = textareaRef.current;
+        if (!element) return;
+        element.style.height = 'auto';
+        element.style.height = `${Math.min(element.scrollHeight, 96)}px`;
+        element.focus();
+      });
+    }
+  }, [rounds, error]);
 
   const busy = stage !== 'idle';
 
@@ -158,6 +179,8 @@ export function PracticePage({ navigate }: PracticePageProps) {
     if (!text || busy) return;
     reportError(null);
     submittedTextRef.current = text;
+    setTextDraft('');
+    if (textareaRef.current) textareaRef.current.style.height = '';
     processText(text);
   };
 
@@ -191,12 +214,14 @@ export function PracticePage({ navigate }: PracticePageProps) {
         />
       )}
 
-      {rounds.length > 0 && (
+      {(rounds.length > 0 || stage !== 'idle') && (
         <div className="mt-4">
           <PracticeChat
             rounds={rounds}
             autoPlayKey={autoPlayKey}
             onAutoPlayed={handleAutoPlayed}
+            pendingUserText={pendingUserText}
+            stage={stage}
           />
         </div>
       )}
@@ -299,11 +324,7 @@ export function PracticePage({ navigate }: PracticePageProps) {
                   aria-label="发送"
                   className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand text-white transition active:bg-brand-strong disabled:opacity-40 dark:text-[#1a1830]"
                 >
-                  {busy ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Send className="size-4" />
-                  )}
+                  <Send className="size-4" />
                 </button>
               </div>
             </div>

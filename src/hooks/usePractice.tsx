@@ -23,6 +23,8 @@ interface PracticeContextValue {
   rounds: SessionRecord[];
   stage: PracticeStage;
   error: string | null;
+  /** 正在处理的一轮里，用户已经说/写的内容；ASR 返回前为 null。 */
+  pendingUserText: string | null;
   /** 刚产生的一轮的 createdAt，用于只对新回复自动播放。 */
   freshRoundKey: number | null;
   sync: () => Promise<void>;
@@ -46,6 +48,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
   const [rounds, setRounds] = useState<SessionRecord[]>([]);
   const [stage, setStage] = useState<PracticeStage>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [pendingUserText, setPendingUserText] = useState<string | null>(null);
   const [freshRoundKey, setFreshRoundKey] = useState<number | null>(null);
 
   const topicRef = useRef(topic);
@@ -118,6 +121,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
 
     processingRef.current = true;
     setError(null);
+    setPendingUserText(null);
     setFreshRoundKey(null);
     return { topic: currentTopic, settings: currentSettings };
   }, []);
@@ -185,11 +189,13 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
           setStage('transcribing');
           const wav = await convertToWav(blob);
           const userText = await transcribeAudio(context.settings.apiKey, wav);
+          setPendingUserText(userText);
           setStage('thinking');
           await submitUtterance(context.topic, context.settings, userText);
         } catch (err) {
           setError(errorMessage(err));
         } finally {
+          setPendingUserText(null);
           finishProcessing();
         }
       })();
@@ -209,6 +215,8 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       const context = beginProcessing();
       if (!context) return;
 
+      setPendingUserText(userText);
+
       void (async () => {
         try {
           setStage('thinking');
@@ -216,6 +224,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
         } catch (err) {
           setError(errorMessage(err));
         } finally {
+          setPendingUserText(null);
           finishProcessing();
         }
       })();
@@ -237,6 +246,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       rounds,
       stage,
       error,
+      pendingUserText,
       freshRoundKey,
       sync,
       processRecording,
@@ -249,6 +259,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       rounds,
       stage,
       error,
+      pendingUserText,
       freshRoundKey,
       sync,
       processRecording,

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { AudioLines, Loader2, Mic } from 'lucide-react';
+import { AudioLines, Mic } from 'lucide-react';
 import { useRecorder } from '../hooks/useRecorder';
 import { classNames, formatClock } from '../lib/utils';
 import { useToast } from './Toast';
@@ -140,10 +140,7 @@ export function HoldToTalk({
         )}
       >
         {busy ? (
-          <>
-            <Loader2 className="size-4 animate-spin" />
-            {busyLabel}
-          </>
+          busyLabel
         ) : pressed ? (
           canceling ? '松开取消' : '松开结束'
         ) : (

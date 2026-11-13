@@ -224,6 +224,8 @@ export async function correctAndReply({
         },
       ],
       response_format: { type: 'json_object' },
+      // MiMo v2.6 默认开启思考，这里显式关闭以降低延迟和输出截断风险
+      thinking: { type: 'disabled' },
       max_completion_tokens: 1800,
     },
     90_000,
@@ -299,6 +301,7 @@ export async function generateDailyTopic(
           { role: 'user', content: buildTopicUserPrompt(candidates, usedTitles.slice(-8)) },
         ],
         response_format: { type: 'json_object' },
+        thinking: { type: 'disabled' },
         max_completion_tokens: 700,
       },
       60_000,

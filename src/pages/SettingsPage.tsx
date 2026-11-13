@@ -45,6 +45,7 @@ export function SettingsPage() {
   const [showKey, setShowKey] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [themeTouched, setThemeTouched] = useState(false);
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
@@ -183,8 +184,11 @@ export function SettingsPage() {
               }}
             >
               <span
-                key={settings.theme}
-                className="block h-full rounded-xl bg-surface shadow-card animate-tab-shuttle"
+                key={themeTouched ? settings.theme : 'idle'}
+                className={classNames(
+                  'block h-full rounded-xl bg-surface shadow-card',
+                  themeTouched && 'animate-tab-shuttle',
+                )}
               />
             </div>
           </div>
@@ -197,7 +201,11 @@ export function SettingsPage() {
                 <button
                   key={theme.value}
                   type="button"
-                  onClick={() => updateSettings({ theme: theme.value })}
+                  onClick={() => {
+                    if (theme.value === settings.theme) return;
+                    setThemeTouched(true);
+                    updateSettings({ theme: theme.value });
+                  }}
                   className={classNames(
                     'relative z-10 flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl text-[12px] transition-colors duration-300',
                     active ? 'font-semibold text-ink' : 'text-muted active:bg-surface',

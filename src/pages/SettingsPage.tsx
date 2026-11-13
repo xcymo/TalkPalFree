@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
@@ -46,8 +46,31 @@ export function SettingsPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
 
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const [contentPad, setContentPad] = useState(0);
+
+  // 标题栏固定后，用它的实际高度（含安全区）给内容留出空间
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    const parent = rootRef.current?.parentElement;
+    if (!header || !parent) return;
+    const apply = () => {
+      const parentPad = parseFloat(getComputedStyle(parent).paddingTop) || 0;
+      setContentPad(Math.max(0, header.offsetHeight - parentPad + 8));
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
+
   const todayUsage = useLiveQuery(() => getUsage(), []) ?? EMPTY_USAGE;
   const totalUsage = useLiveQuery(() => getTotalUsage(), []) ?? EMPTY_USAGE;
+  const activeThemeIndex = Math.max(
+    0,
+    THEMES.findIndex((theme) => theme.value === settings.theme),
+  );
 
   const saveKey = () => {
     const trimmed = keyDraft.trim();
@@ -76,9 +99,11 @@ export function SettingsPage() {
   };
 
   return (
-    <div>
-      <div className="sticky-header sticky-safe sticky top-0 z-30 -mx-4 transform-gpu bg-bg px-4">
-        <PageHeader title="设置" subtitle="Key 和练习数据都只留在本机浏览器" />
+    <div ref={rootRef} style={{ paddingTop: contentPad }}>
+      <div ref={headerRef} className="fixed inset-x-0 top-0 z-30 bg-bg">
+        <div className="pt-safe mx-auto w-full max-w-[520px] px-4">
+          <PageHeader title="设置" subtitle="Key 和练习数据都只留在本机浏览器" />
+        </div>
       </div>
 
       <Section
@@ -144,27 +169,51 @@ export function SettingsPage() {
       </Section>
 
       <Section title="外观" icon={Monitor}>
-        <div className="grid grid-cols-3 gap-1 rounded-2xl bg-surface2 p-1">
-          {THEMES.map((theme) => {
-            const Icon = theme.icon;
-            const active = settings.theme === theme.value;
-            return (
-              <button
-                key={theme.value}
-                type="button"
-                onClick={() => updateSettings({ theme: theme.value })}
-                className={classNames(
-                  'flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl text-[12px] transition',
-                  active
-                    ? 'bg-surface font-semibold text-ink shadow-card'
-                    : 'text-muted active:bg-surface',
-                )}
-              >
-                <Icon className="size-3.5" />
-                {theme.label}
-              </button>
-            );
-          })}
+        <div className="relative rounded-2xl bg-surface2 p-1">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-1 grid grid-cols-3 gap-1"
+          >
+            <div
+              className="col-start-1 row-start-1 transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform"
+              style={{
+                transform: `translateX(calc(${activeThemeIndex * 100}% + ${
+                  activeThemeIndex * 0.25
+                }rem))`,
+              }}
+            >
+              <span
+                key={settings.theme}
+                className="block h-full rounded-xl bg-surface shadow-card animate-tab-shuttle"
+              />
+            </div>
+          </div>
+
+          <div className="relative grid grid-cols-3 gap-1">
+            {THEMES.map((theme) => {
+              const Icon = theme.icon;
+              const active = settings.theme === theme.value;
+              return (
+                <button
+                  key={theme.value}
+                  type="button"
+                  onClick={() => updateSettings({ theme: theme.value })}
+                  className={classNames(
+                    'relative z-10 flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl text-[12px] transition-colors duration-300',
+                    active ? 'font-semibold text-ink' : 'text-muted active:bg-surface',
+                  )}
+                >
+                  <Icon
+                    className={classNames(
+                      'size-3.5 transition-transform duration-300',
+                      active ? 'scale-110' : 'scale-100',
+                    )}
+                  />
+                  {theme.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </Section>
 

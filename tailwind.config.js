@@ -54,11 +54,17 @@ export default {
         shimmer: {
           '100%': { transform: 'translateX(100%)' },
         },
+        'tab-shuttle': {
+          '0%': { transform: 'scaleX(0.55)' },
+          '55%': { transform: 'scaleX(1.15)' },
+          '100%': { transform: 'scaleX(1)' },
+        },
       },
       animation: {
         'pulse-ring': 'pulse-ring 1.8s cubic-bezier(0.2, 0.6, 0.4, 1) infinite',
         'fade-up': 'fade-up 0.35s ease-out both',
         wave: 'wave 0.9s ease-in-out infinite',
+        'tab-shuttle': 'tab-shuttle 0.36s cubic-bezier(0.22, 1, 0.36, 1)',
       },
     },
   },

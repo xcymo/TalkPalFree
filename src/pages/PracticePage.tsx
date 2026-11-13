@@ -25,16 +25,6 @@ interface PracticePageProps {
 
 type InputMode = 'voice' | 'text';
 
-const INPUT_MODE_KEY = 'spoken-english:input-mode';
-
-function readInputMode(): InputMode {
-  try {
-    return localStorage.getItem(INPUT_MODE_KEY) === 'text' ? 'text' : 'voice';
-  } catch {
-    return 'voice';
-  }
-}
-
 export function PracticePage({ navigate }: PracticePageProps) {
   const { settings } = useSettings();
   const {
@@ -60,7 +50,7 @@ export function PracticePage({ navigate }: PracticePageProps) {
   // 进入页面时已经存在的新回复不自动播放，只有本次停留期间产生的才播放。
   const initialFreshKeyRef = useRef(freshRoundKey);
 
-  const [inputMode, setInputMode] = useState<InputMode>(readInputMode);
+  const [inputMode, setInputMode] = useState<InputMode>('voice');
   const [textDraft, setTextDraft] = useState('');
   const [autoPlayKey, setAutoPlayKey] = useState<number | null>(null);
   const [recording, setRecording] = useState(false);
@@ -138,11 +128,6 @@ export function PracticePage({ navigate }: PracticePageProps) {
     if (busy || recording) return;
     setInputMode(mode);
     focusTextRef.current = mode === 'text';
-    try {
-      localStorage.setItem(INPUT_MODE_KEY, mode);
-    } catch {
-      // 隐私模式下写不了 localStorage，忽略即可
-    }
     if (mode === 'voice') textareaRef.current?.blur();
   };
 
@@ -185,7 +170,7 @@ export function PracticePage({ navigate }: PracticePageProps) {
       ) : topic ? (
         <div
           ref={stickyRef}
-          className="sticky-header sticky-safe sticky top-0 z-30 -mx-4 transform-gpu bg-bg px-4 pb-3 pt-2"
+          className="sticky-safe sticky top-0 z-30 -mx-4 transform-gpu bg-bg px-4 pb-3 pt-2"
         >
           <TopicCard topic={topic} compact />
         </div>

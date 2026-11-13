@@ -93,7 +93,7 @@ export function HistoryPage({ navigate }: HistoryPageProps) {
       {sessions.length > 0 && (
         <div
           ref={stickyRef}
-          className="sticky-header sticky-safe sticky top-0 z-30 -mx-4 transform-gpu bg-bg px-4 pb-3 pt-2"
+          className="sticky-safe sticky top-0 z-30 -mx-4 transform-gpu bg-bg px-4 pb-3 pt-2"
         >
           <TopicFilter
             value={topicFilter}

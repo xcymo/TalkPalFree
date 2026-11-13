@@ -71,15 +71,6 @@ button {
   .sticky-radius {
     border-radius: var(--sticky-radius, 1rem);
   }
-  .sticky-header::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 100%;
-    height: 2px;
-    background: var(--bg);
-  }
   .bg-nav {
     background-color: var(--surface);
     background-color: color-mix(in srgb, var(--surface) 88%, transparent);

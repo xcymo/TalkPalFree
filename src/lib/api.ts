@@ -13,6 +13,7 @@ import {
   buildTopicUserPrompt,
 } from './schemas';
 import { ttsCacheKey } from './utils';
+import { cleanTranscript } from './transcript';
 
 export class ApiError extends Error {
   readonly friendly: string;
@@ -145,26 +146,6 @@ export function parseJsonLoose<T>(raw: string): T {
     }
     throw new ApiError('invalid json', 'AI 返回的内容格式异常，请再试一次。');
   }
-}
-
-const TIMESTAMP_PREFIX = /^(?:\[\d{1,2}:\d{2}(?::\d{2})?\]|\d{1,2}:\d{2}:\d{2})[\s\-–—:.]*/;
-const SEGMENT_PREFIX = /^\d{1,2}\s*[.、)]\s*/;
-const BARE_ONE_PREFIX =
-  /^1\s+(?=(?:I|I'd|I'm|I'll|Could|Can|Would|Do|Does|Is|Are|The|A|An|We|You|He|She|They|There|It|My|Our|This|That)\b)/;
-
-/** 清掉 ASR 偶尔带出的时间戳、分段编号等前缀。 */
-function cleanTranscript(raw: string): string {
-  let text = raw.replace(/\s+/g, ' ').trim();
-  for (let i = 0; i < 3; i += 1) {
-    const next = text
-      .replace(TIMESTAMP_PREFIX, '')
-      .replace(SEGMENT_PREFIX, '')
-      .replace(BARE_ONE_PREFIX, '')
-      .trim();
-    if (next === text) break;
-    text = next;
-  }
-  return text;
 }
 
 export async function transcribeAudio(apiKey: string, wavBlob: Blob): Promise<string> {

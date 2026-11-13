@@ -93,6 +93,8 @@ Authorization: Bearer <你的 Key>
 
 识别结果从 `choices[0].message.content` 读取。60 秒录音转 WAV 后 base64 约 2.6 MB，低于官方 10 MB 限制。
 
+识别文本会再经过 `src/lib/transcript.ts` 做一层轻量清理：去掉时间戳、分段编号，并把句首常见的 ASR 数字归一化还原，例如 `1 want to go` → `I want to go`、`0, I forgot` → `Oh, I forgot`；同时会跳过 `1 hour`、`1.5 hours`、`0.5`、`0:30` 等真实数字场景。
+
 > **ASR 请求格式请以官方文档为准**：<https://mimo.mi.com/static/docs/quick-start/usage-guide/audio/Speech-Recognition.md>
 > 若官方以后调整字段，只需修改 `src/lib/api.ts` 的 `transcribeAudio`。
 
@@ -214,6 +216,7 @@ localStorage 只存设置：API Key、音色、主题、自动播放。
    │  ├─ schemas.ts            # 纠错 / 话题提示词与 JSON schema
    │  ├─ settings.ts           # localStorage 设置 + 主题
    │  ├─ topicService.ts       # 每日话题生成 / 换话题（含并发去重）
+   │  ├─ transcript.ts         # ASR 文本清理（时间戳/分段/句首 1→I、0→Oh）
    │  └─ utils.ts              # 日期、计时、streak、缓存 key 等
    └─ pages/
       ├─ TodayPage.tsx

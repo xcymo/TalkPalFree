@@ -2,6 +2,8 @@
 
 一个**纯前端、移动端优先**的英语口语练习 Web App：说一句或打一句英文，语音会先经 MiMo ASR 转写，文字则直接进入 MiMo LLM 纠错并回复，再由 MiMo TTS 读出来。所有练习记录、话题、语音缓存和 API Key 都只保存在浏览器本地，没有后端。
 
+**在线体验**：<https://talk-pal-free.vercel.app/>
+
 - 技术栈：Vite + React 18 + TypeScript + Tailwind CSS 3
 - 存储：IndexedDB（Dexie）+ localStorage
 - 录音：MediaRecorder，录音后自动转成 16 kHz 单声道 WAV 再发给 ASR

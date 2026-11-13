@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { History, Mic, Settings2, Sparkles } from 'lucide-react';
 import type { Route } from '../hooks/useHashRoute';
 import { classNames } from '../lib/utils';
@@ -15,8 +16,26 @@ interface BottomNavProps {
 }
 
 export function BottomNav({ route, navigate }: BottomNavProps) {
+  const navRef = useRef<HTMLElement | null>(null);
+
+  // 把导航实际高度暴露给固定在它上方的输入栏
+  useEffect(() => {
+    const element = navRef.current;
+    if (!element) return;
+    const apply = () => {
+      document.documentElement.style.setProperty('--nav-h', `${element.offsetHeight}px`);
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-nav backdrop-blur-xl">
+    <nav
+      ref={navRef}
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-nav backdrop-blur-xl"
+    >
       <div className="nav-safe mx-auto grid w-full max-w-[520px] grid-cols-4 px-2 pt-1.5">
         {ITEMS.map((item) => {
           const active = route === item.route;

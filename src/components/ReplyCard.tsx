@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { Pause, Play, Volume2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Languages, Pause, Play, Volume2 } from 'lucide-react';
 import { useTtsPlayer } from '../hooks/useTts';
 import { useSettings } from '../hooks/useSettings';
 import { getVoice } from '../config/voices';
@@ -14,6 +14,8 @@ interface ReplyCardProps {
   compact?: boolean;
   label?: string;
   onAutoPlayed?: () => void;
+  hideAvatar?: boolean;
+  collapsibleTranslation?: boolean;
 }
 
 export function ReplyCard({
@@ -24,10 +26,13 @@ export function ReplyCard({
   compact,
   label = 'AI 回复',
   onAutoPlayed,
+  hideAvatar,
+  collapsibleTranslation,
 }: ReplyCardProps) {
   const { status, error, toggle } = useTtsPlayer();
   const { settings } = useSettings();
   const autoPlayedRef = useRef(false);
+  const [translationOpen, setTranslationOpen] = useState(false);
   const voiceInfo = getVoice(voice);
 
   useEffect(() => {
@@ -54,10 +59,12 @@ export function ReplyCard({
         compact ? 'px-4 py-3.5' : 'px-4 py-4',
       )}
     >
-      <div className="flex items-start gap-3">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand">
-          <Volume2 className="size-4" />
-        </div>
+      <div className="flex items-stretch gap-3">
+        {!hideAvatar && (
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand">
+            <Volume2 className="size-4" />
+          </div>
+        )}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -72,36 +79,68 @@ export function ReplyCard({
           >
             {text}
           </p>
-          {translation && (
+          {translation && !collapsibleTranslation && (
             <p className="mt-2 border-t border-line pt-2 text-[12.5px] leading-5 text-muted">
               {translation}
             </p>
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => void toggle(text, voice)}
-          disabled={isLoading}
-          aria-label={isPlaying ? '暂停播放' : '播放 AI 回复'}
-          className={classNames(
-            'flex size-11 shrink-0 items-center justify-center rounded-full transition active:scale-95',
-            isPlaying
-              ? 'bg-brand text-white dark:text-[#1a1830]'
-              : 'bg-surface2 text-brand active:bg-brand-soft',
+        <div className="flex shrink-0 flex-col items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => void toggle(text, voice)}
+            disabled={isLoading}
+            aria-label={isPlaying ? '暂停播放' : '播放 AI 回复'}
+            className={classNames(
+              'flex size-11 shrink-0 items-center justify-center rounded-full transition active:scale-95',
+              isPlaying
+                ? 'bg-brand text-white dark:text-[#1a1830]'
+                : 'bg-surface2 text-brand active:bg-brand-soft',
+            )}
+          >
+            {isLoading ? (
+              <Spinner className="size-4" />
+            ) : isPlaying ? (
+              <Pause className="size-4" />
+            ) : (
+              <Play className="size-4 translate-x-[1px] fill-current" />
+            )}
+          </button>
+
+          {translation && collapsibleTranslation && (
+            <button
+              type="button"
+              onClick={() => setTranslationOpen((value) => !value)}
+              aria-expanded={translationOpen}
+              aria-label={translationOpen ? '收起翻译' : '展开翻译'}
+              className={classNames(
+                'flex size-6 shrink-0 items-center justify-center rounded-full transition active:scale-95',
+                translationOpen ? 'text-brand' : 'text-muted active:text-brand',
+              )}
+            >
+              <Languages className="size-3.5" />
+            </button>
           )}
-        >
-          {isLoading ? (
-            <Spinner className="size-4" />
-          ) : isPlaying ? (
-            <Pause className="size-4" />
-          ) : (
-            <Play className="size-4 translate-x-[1px] fill-current" />
-          )}
-        </button>
+        </div>
       </div>
 
-      {error && <p className="mt-2 pl-11 text-[11.5px] leading-5 text-rose-500">{error}</p>}
+      {translation && collapsibleTranslation && translationOpen && (
+        <p className="mt-2 border-t border-line pt-2 text-[12.5px] leading-5 text-muted animate-fade-up">
+          {translation}
+        </p>
+      )}
+
+      {error && (
+        <p
+          className={classNames(
+            'mt-2 text-[11.5px] leading-5 text-rose-500',
+            !hideAvatar && 'pl-11',
+          )}
+        >
+          {error}
+        </p>
+      )}
     </div>
   );
 }

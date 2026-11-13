@@ -71,10 +71,3 @@ export interface Settings {
 }
 
 export type PracticeStage = 'idle' | 'recording' | 'transcribing' | 'thinking';
-
-export interface ConversationRound {
-  userText: string;
-  replyText: string;
-  correctionsCount: number;
-  optimizedFullSentence?: string;
-}

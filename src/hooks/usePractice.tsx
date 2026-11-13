@@ -8,12 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type {
-  ConversationRound,
-  CorrectionResult,
-  PracticeStage,
-  TopicRecord,
-} from '../types';
+import type { PracticeStage, SessionRecord, Settings, TopicRecord } from '../types';
 import { addSession, getSessionsForDate, getTodayTopic } from '../lib/db';
 import { ensureTodayTopic } from '../lib/topicService';
 import { correctAndReply, errorMessage, transcribeAudio } from '../lib/api';
@@ -22,32 +17,22 @@ import { toDateKey, ttsCacheKey } from '../lib/utils';
 import { useSettings } from './useSettings';
 import { useToast } from '../components/Toast';
 
-export interface PracticeResult extends CorrectionResult {
-  userText: string;
-}
-
 interface PracticeContextValue {
   topic: TopicRecord | null | undefined;
-  rounds: ConversationRound[];
-  result: PracticeResult | null;
+  /** 当天该话题的全部轮次，按时间正序，带纠错、翻译等完整数据。 */
+  rounds: SessionRecord[];
   stage: PracticeStage;
   error: string | null;
+  /** 刚产生的一轮的 createdAt，用于只对新回复自动播放。 */
+  freshRoundKey: number | null;
   sync: () => Promise<void>;
   processRecording: (blob: Blob) => void;
-  nextRound: () => void;
+  processText: (text: string) => void;
+  acknowledgeFreshRound: () => void;
   reportError: (message: string | null) => void;
 }
 
 const PracticeContext = createContext<PracticeContextValue | null>(null);
-
-function toRounds(sessions: Awaited<ReturnType<typeof getSessionsForDate>>): ConversationRound[] {
-  return sessions.map((session) => ({
-    userText: session.userText,
-    replyText: session.replyText,
-    correctionsCount: session.corrections.length,
-    optimizedFullSentence: session.optimizedFullSentence,
-  }));
-}
 
 /**
  * 练习流程放在 App 级别的 Provider 里，切换页面（组件卸载）不会中断
@@ -58,10 +43,10 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
   const toast = useToast();
 
   const [topic, setTopic] = useState<TopicRecord | null | undefined>(undefined);
-  const [rounds, setRounds] = useState<ConversationRound[]>([]);
-  const [result, setResult] = useState<PracticeResult | null>(null);
+  const [rounds, setRounds] = useState<SessionRecord[]>([]);
   const [stage, setStage] = useState<PracticeStage>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [freshRoundKey, setFreshRoundKey] = useState<number | null>(null);
 
   const topicRef = useRef(topic);
   const roundsRef = useRef(rounds);
@@ -101,17 +86,13 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
 
       setTopic(todayTopic);
       if (!sameTopic) {
-        setResult(null);
         setError(null);
+        setFreshRoundKey(null);
       }
 
       if (!sameTopic || roundsRef.current.length === 0) {
         const existing = await getSessionsForDate(dateKey);
-        setRounds(
-          toRounds(
-            existing.filter((session) => session.topicTitleEn === todayTopic?.title_en),
-          ),
-        );
+        setRounds(existing.filter((session) => session.topicTitleEn === todayTopic?.title_en));
       }
     } catch (err) {
       if (!topicRef.current) setTopic(null);
@@ -121,91 +102,129 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const processRecording = useCallback(
-    (blob: Blob) => {
-      const currentTopic = topicRef.current;
-      const currentSettings = settingsRef.current;
+  const beginProcessing = useCallback((): { topic: TopicRecord; settings: Settings } | null => {
+    const currentTopic = topicRef.current;
+    const currentSettings = settingsRef.current;
 
-      if (!currentTopic) {
-        setError('今天还没有话题，请回到「今日」页生成后再练习。');
-        return;
+    if (!currentTopic) {
+      setError('今天还没有话题，请回到「今日」页生成后再练习。');
+      return null;
+    }
+    if (!currentSettings.apiKey) {
+      setError('还没有填写 MiMo API Key，请先到「设置」页保存 Key。');
+      return null;
+    }
+    if (processingRef.current) return null;
+
+    processingRef.current = true;
+    setError(null);
+    setFreshRoundKey(null);
+    return { topic: currentTopic, settings: currentSettings };
+  }, []);
+
+  const finishProcessing = useCallback(() => {
+    processingRef.current = false;
+    setStage('idle');
+  }, []);
+
+  /** ASR 之后（文字输入则直接）共用的一轮：LLM 纠错 + 回复 + 写入本地记录。 */
+  const submitUtterance = useCallback(
+    async (currentTopic: TopicRecord, currentSettings: Settings, userText: string) => {
+      const history: { role: 'user' | 'assistant'; content: string }[] = [];
+      if (currentTopic.icebreaker_en) {
+        history.push({ role: 'assistant', content: currentTopic.icebreaker_en });
       }
-      if (!currentSettings.apiKey) {
-        setError('还没有填写 MiMo API Key，请先到「设置」页保存 Key。');
-        return;
+      for (const round of roundsRef.current) {
+        history.push({ role: 'user', content: round.userText });
+        history.push({ role: 'assistant', content: round.replyText });
       }
-      if (processingRef.current) return;
 
-      processingRef.current = true;
-      setError(null);
-      setResult(null);
-      setStage('transcribing');
+      const response = await correctAndReply({
+        apiKey: currentSettings.apiKey,
+        topic: `${currentTopic.title_en} (${currentTopic.scene_en})\n${currentTopic.prompt_zh}`,
+        history,
+        utterance: userText,
+      });
 
-      void (async () => {
-        try {
-          const wav = await convertToWav(blob);
-          const userText = await transcribeAudio(currentSettings.apiKey, wav);
-          setStage('thinking');
+      const createdAt = Date.now();
+      const record: Omit<SessionRecord, 'id'> = {
+        dateKey: currentTopic.dateKey,
+        topicId: currentTopic.dateKey,
+        topicTitleEn: currentTopic.title_en,
+        topicTitleZh: currentTopic.title_zh,
+        userText,
+        corrections: response.corrections,
+        optimizedFullSentence: response.optimized_full_sentence,
+        replyText: response.reply_text,
+        replyTranslationZh: response.reply_translation_zh,
+        ttsCacheKey: ttsCacheKey(response.reply_text, currentSettings.voice),
+        voice: currentSettings.voice,
+        createdAt,
+      };
 
-          const history: { role: 'user' | 'assistant'; content: string }[] = [];
-          if (currentTopic.icebreaker_en) {
-            history.push({ role: 'assistant', content: currentTopic.icebreaker_en });
-          }
-          for (const round of roundsRef.current) {
-            history.push({ role: 'user', content: round.userText });
-            history.push({ role: 'assistant', content: round.replyText });
-          }
+      let id: number | undefined;
+      try {
+        id = await addSession(record);
+      } catch {
+        toast('这一轮完成了，但本地记录保存失败。', 'error');
+      }
 
-          const response = await correctAndReply({
-            apiKey: currentSettings.apiKey,
-            topic: `${currentTopic.title_en} (${currentTopic.scene_en})\n${currentTopic.prompt_zh}`,
-            history,
-            utterance: userText,
-          });
-
-          setResult({ ...response, userText });
-          setRounds((previous) => [
-            ...previous,
-            {
-              userText,
-              replyText: response.reply_text,
-              correctionsCount: response.corrections.length,
-              optimizedFullSentence: response.optimized_full_sentence,
-            },
-          ]);
-
-          try {
-            await addSession({
-              dateKey: currentTopic.dateKey,
-              topicId: currentTopic.dateKey,
-              topicTitleEn: currentTopic.title_en,
-              topicTitleZh: currentTopic.title_zh,
-              userText,
-              corrections: response.corrections,
-              optimizedFullSentence: response.optimized_full_sentence,
-              replyText: response.reply_text,
-              replyTranslationZh: response.reply_translation_zh,
-              ttsCacheKey: ttsCacheKey(response.reply_text, currentSettings.voice),
-              voice: currentSettings.voice,
-              createdAt: Date.now(),
-            });
-          } catch {
-            toast('这一轮完成了，但本地记录保存失败。', 'error');
-          }
-        } catch (err) {
-          setError(errorMessage(err));
-        } finally {
-          processingRef.current = false;
-          setStage('idle');
-        }
-      })();
+      setRounds((previous) => [...previous, id === undefined ? record : { ...record, id }]);
+      setFreshRoundKey(createdAt);
     },
     [toast],
   );
 
-  const nextRound = useCallback(() => {
-    setResult(null);
-    setError(null);
+  const processRecording = useCallback(
+    (blob: Blob) => {
+      const context = beginProcessing();
+      if (!context) return;
+
+      void (async () => {
+        try {
+          setStage('transcribing');
+          const wav = await convertToWav(blob);
+          const userText = await transcribeAudio(context.settings.apiKey, wav);
+          setStage('thinking');
+          await submitUtterance(context.topic, context.settings, userText);
+        } catch (err) {
+          setError(errorMessage(err));
+        } finally {
+          finishProcessing();
+        }
+      })();
+    },
+    [beginProcessing, finishProcessing, submitUtterance],
+  );
+
+  /** 文字输入：跳过 ASR，直接把文本交给 LLM。 */
+  const processText = useCallback(
+    (text: string) => {
+      const userText = text.trim();
+      if (!userText) {
+        setError('先写一句想说的英文，再交给 AI。');
+        return;
+      }
+
+      const context = beginProcessing();
+      if (!context) return;
+
+      void (async () => {
+        try {
+          setStage('thinking');
+          await submitUtterance(context.topic, context.settings, userText);
+        } catch (err) {
+          setError(errorMessage(err));
+        } finally {
+          finishProcessing();
+        }
+      })();
+    },
+    [beginProcessing, finishProcessing, submitUtterance],
+  );
+
+  const acknowledgeFreshRound = useCallback(() => {
+    setFreshRoundKey(null);
   }, []);
 
   const reportError = useCallback((message: string | null) => {
@@ -216,15 +235,27 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
     () => ({
       topic,
       rounds,
-      result,
       stage,
       error,
+      freshRoundKey,
       sync,
       processRecording,
-      nextRound,
+      processText,
+      acknowledgeFreshRound,
       reportError,
     }),
-    [topic, rounds, result, stage, error, sync, processRecording, nextRound, reportError],
+    [
+      topic,
+      rounds,
+      stage,
+      error,
+      freshRoundKey,
+      sync,
+      processRecording,
+      processText,
+      acknowledgeFreshRound,
+      reportError,
+    ],
   );
 
   return <PracticeContext.Provider value={value}>{children}</PracticeContext.Provider>;

@@ -1,29 +1,38 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ArrowRight,
-  AudioLines,
-  Lightbulb,
-  Loader2,
-  Mic,
-  Volume2,
-} from 'lucide-react';
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from 'react';
+import { ArrowRight, Keyboard, Loader2, Mic, Send } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
-import { useRecorder } from '../hooks/useRecorder';
 import { usePractice } from '../hooks/usePractice';
-import { formatClock } from '../lib/utils';
+import { useStickyBleed } from '../hooks/useStickyBleed';
 import { PageHeader } from '../components/PageHeader';
 import { TopicCard } from '../components/TopicCard';
-import { RecordButton } from '../components/RecordButton';
 import { ErrorBanner } from '../components/ErrorBanner';
-import { ResultSectionTitle } from '../components/CorrectionList';
-import { SentenceCompare } from '../components/SentenceCompare';
-import { CorrectionsPanel } from '../components/CorrectionsPanel';
-import { ReplyCard } from '../components/ReplyCard';
+import { PracticeChat } from '../components/PracticeChat';
 import { EmptyState } from '../components/EmptyState';
+import { HoldToTalk } from '../components/HoldToTalk';
+import { classNames } from '../lib/utils';
 import type { Route } from '../hooks/useHashRoute';
 
 interface PracticePageProps {
   navigate: (route: Route) => void;
+}
+
+type InputMode = 'voice' | 'text';
+
+const INPUT_MODE_KEY = 'spoken-english:input-mode';
+
+function readInputMode(): InputMode {
+  try {
+    return localStorage.getItem(INPUT_MODE_KEY) === 'text' ? 'text' : 'voice';
+  } catch {
+    return 'voice';
+  }
 }
 
 export function PracticePage({ navigate }: PracticePageProps) {
@@ -31,82 +40,155 @@ export function PracticePage({ navigate }: PracticePageProps) {
   const {
     topic,
     rounds,
-    result,
     stage,
     error,
+    freshRoundKey,
     sync,
     processRecording,
-    nextRound,
+    processText,
+    acknowledgeFreshRound,
     reportError,
   } = usePractice();
 
-  const resultRef = useRef<HTMLDivElement | null>(null);
-  const recorderPanelRef = useRef<HTMLDivElement | null>(null);
+  const submittedTextRef = useRef<string | null>(null);
+  const stickyRef = useStickyBleed<HTMLDivElement>();
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const voiceLayerRef = useRef<HTMLDivElement | null>(null);
+  const textLayerRef = useRef<HTMLDivElement | null>(null);
+  const focusTextRef = useRef(false);
+  const didInitialScrollRef = useRef(false);
+  // 进入页面时已经存在的新回复不自动播放，只有本次停留期间产生的才播放。
+  const initialFreshKeyRef = useRef(freshRoundKey);
 
-  const [autoPlayResult, setAutoPlayResult] = useState(false);
-  const lastSeenResultRef = useRef(result);
+  const [inputMode, setInputMode] = useState<InputMode>(readInputMode);
+  const [textDraft, setTextDraft] = useState('');
+  const [autoPlayKey, setAutoPlayKey] = useState<number | null>(null);
+  const [recording, setRecording] = useState(false);
 
   useEffect(() => {
     void sync();
   }, [sync]);
 
   useEffect(() => {
-    if (result && result !== lastSeenResultRef.current) {
-      setAutoPlayResult(true);
-    } else if (!result) {
-      setAutoPlayResult(false);
+    if (freshRoundKey !== null && freshRoundKey !== initialFreshKeyRef.current) {
+      setAutoPlayKey(freshRoundKey);
     }
-    lastSeenResultRef.current = result;
-  }, [result]);
-
-  useEffect(() => {
-    if (!result) return;
-    const timer = window.setTimeout(() => {
-      resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 120);
-    return () => window.clearTimeout(timer);
-  }, [result]);
+  }, [freshRoundKey]);
 
   const handleAutoPlayed = useCallback(() => {
-    setAutoPlayResult(false);
-  }, []);
+    setAutoPlayKey(null);
+    acknowledgeFreshRound();
+  }, [acknowledgeFreshRound]);
 
-  const recorder = useRecorder({
-    onComplete: processRecording,
-    onError: (message) => reportError(message),
-  });
+  // 有新轮次（包括首次从本地恢复）时滚到对话末尾。
+  // 刚进入页面时直接跳到底部，只有停留在页面期间产生的新回复才平滑滚动。
+  useEffect(() => {
+    if (rounds.length === 0) return;
+    if (!didInitialScrollRef.current) {
+      didInitialScrollRef.current = true;
+      window.scrollTo({ top: document.documentElement.scrollHeight });
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [rounds.length]);
 
-  const busy = stage === 'transcribing' || stage === 'thinking';
-  const recording = recorder.isRecording;
+  // 出错时确保提示条出现在固定输入栏上方
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [error]);
 
-  const handleStart = () => {
+  // 文字提交成功后清空输入框；请求失败时保留原文方便重试。
+  useEffect(() => {
+    if (submittedTextRef.current === null) return;
+    const latest = rounds[rounds.length - 1];
+    if (latest && latest.userText === submittedTextRef.current) {
+      setTextDraft('');
+      submittedTextRef.current = null;
+      if (textareaRef.current) textareaRef.current.style.height = '';
+    }
+  }, [rounds]);
+
+  const busy = stage !== 'idle';
+
+  const handleBeforeStart = () => {
     reportError(null);
     if (!settings.apiKey) {
       reportError('还没有填写 MiMo API Key，请先到「设置」页保存 Key。');
-      return;
+      return false;
     }
     if (!topic) {
       reportError('今天还没有话题，请回到「今日」页生成后再练习。');
-      return;
+      return false;
     }
-    void recorder.start();
+    return true;
   };
 
-  const handleNext = () => {
-    nextRound();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const handleRecordingChange = useCallback((value: boolean) => {
+    setRecording(value);
+  }, []);
+
+  const changeInputMode = (mode: InputMode) => {
+    if (busy || recording) return;
+    setInputMode(mode);
+    focusTextRef.current = mode === 'text';
+    try {
+      localStorage.setItem(INPUT_MODE_KEY, mode);
+    } catch {
+      // 隐私模式下写不了 localStorage，忽略即可
+    }
+    if (mode === 'voice') textareaRef.current?.blur();
   };
 
-  const visibleRounds = result ? rounds.slice(0, -1) : rounds;
+  // 切到文字输入后聚焦输入框（放在 effect 里，保证 textarea 已经挂载）
+  useEffect(() => {
+    if (inputMode === 'text' && focusTextRef.current) {
+      focusTextRef.current = false;
+      textareaRef.current?.focus();
+    }
+  }, [inputMode]);
+
+  // 非当前模式的图层设为 inert，避免隐藏的控件还能被点击或聚焦
+  useLayoutEffect(() => {
+    voiceLayerRef.current?.toggleAttribute('inert', inputMode !== 'voice');
+    textLayerRef.current?.toggleAttribute('inert', inputMode !== 'text');
+  }, [inputMode, topic]);
+
+  const handleDraftChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setTextDraft(event.target.value);
+    if (error) reportError(null);
+    const element = event.currentTarget;
+    element.style.height = 'auto';
+    element.style.height = `${Math.min(element.scrollHeight, 96)}px`;
+  };
+
+  const handleSubmitText = () => {
+    const text = textDraft.trim();
+    if (!text || busy) return;
+    reportError(null);
+    submittedTextRef.current = text;
+    processText(text);
+  };
 
   return (
-    <div>
-      <PageHeader title="练习" subtitle="开口说，剩下的交给 AI" />
+    <div className="pb-14">
+      <PageHeader title="练习" subtitle="说一句或写一句，剩下的交给 AI" />
 
       {topic === undefined ? (
         <div className="h-[74px] animate-pulse rounded-2xl border border-line bg-surface" />
       ) : topic ? (
-        <TopicCard topic={topic} compact />
+        <div
+          ref={stickyRef}
+          className="sticky-header sticky-safe sticky top-0 z-30 -mx-4 transform-gpu bg-bg px-4 pb-3 pt-2"
+        >
+          <TopicCard topic={topic} compact />
+        </div>
       ) : (
         <EmptyState
           icon={Mic}
@@ -124,148 +206,124 @@ export function PracticePage({ navigate }: PracticePageProps) {
         />
       )}
 
+      {rounds.length > 0 && (
+        <div className="mt-4">
+          <PracticeChat
+            rounds={rounds}
+            autoPlayKey={autoPlayKey}
+            onAutoPlayed={handleAutoPlayed}
+          />
+        </div>
+      )}
+
       {error && (
         <div className="mt-4">
           <ErrorBanner message={error} onDismiss={() => reportError(null)} />
         </div>
       )}
 
-      {!result && topic && (
-        <div
-          ref={recorderPanelRef}
-          className="mt-4 rounded-3xl border border-line bg-surface px-4 pb-5 pt-6 shadow-card"
-        >
-          <div className="flex flex-col items-center">
-            <div className="flex h-9 items-center">
-              {recording ? (
-                <p className="font-mono text-[30px] font-medium tabular-nums leading-none tracking-tight text-rose-500">
-                  {formatClock(recorder.seconds)}
-                </p>
-              ) : busy ? (
-                <div className="flex items-center gap-2 text-[12px] text-muted">
-                  <Loader2 className="size-3.5 animate-spin" />
-                  {stage === 'transcribing' ? '正在识别你说的英文…' : 'AI 正在纠错并组织回复…'}
-                </div>
-              ) : (
-                <p className="text-[12.5px] text-muted">准备好就开始，说错也没关系</p>
-              )}
-            </div>
-
-            <div className="mt-2">
-              <RecordButton
-                recording={recording}
-                busy={busy}
-                disabled={!topic}
-                onStart={handleStart}
-                onStop={recorder.stop}
-              />
-            </div>
-
-            <p className="mt-2 text-[12.5px] font-medium text-ink">
-              {recording ? '点击结束并提交' : busy ? '稍等一下…' : '点击开始说话'}
-            </p>
-            <p className="mt-1 text-[10.5px] text-muted">最长 60 秒 · 录音只发送给 MiMo</p>
-          </div>
-
-          {stage === 'transcribing' && (
-            <div className="mt-4 flex items-center gap-2 rounded-2xl bg-surface2 px-3.5 py-2.5 text-[11.5px] text-muted">
-              <AudioLines className="size-3.5 shrink-0 text-brand" />
-              MiMo ASR 正在转写，保持网络通畅。
-            </div>
-          )}
-        </div>
-      )}
-
-      {result && (
-        <div ref={resultRef} className="mt-4 scroll-mt-4 space-y-4 animate-fade-up">
-          <section>
-            <ResultSectionTitle icon={Mic}>你的表达</ResultSectionTitle>
-            <SentenceCompare
-              userText={result.userText}
-              optimizedSentence={result.optimized_full_sentence}
-            />
-          </section>
-
-          <CorrectionsPanel corrections={result.corrections} />
-
-          <section>
-            <ResultSectionTitle icon={Volume2}>AI 回复</ResultSectionTitle>
-            <ReplyCard
-              text={result.reply_text}
-              translation={result.reply_translation_zh}
-              voice={settings.voice}
-              autoPlay={autoPlayResult}
-              onAutoPlayed={handleAutoPlayed}
-            />
-          </section>
-
-          <button
-            type="button"
-            onClick={handleNext}
-            className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-brand px-4 text-[14.5px] font-semibold text-white shadow-float transition active:scale-[0.99] active:bg-brand-strong dark:text-[#1a1830]"
-          >
-            继续下一轮
-            <ArrowRight className="size-4" />
-          </button>
-          <p className="flex items-center justify-center gap-1.5 pb-1 text-[11px] text-muted">
-            <Lightbulb className="size-3" />
-            话题不变，AI 会记得你们前面的对话
-          </p>
-        </div>
-      )}
-
-      {visibleRounds.length > 0 && (
-        <section className="mt-5">
-          <div className="mb-2 flex items-center justify-between px-1">
-            <h2 className="text-[12px] font-semibold text-muted">本话题的对话</h2>
-            <span className="text-[10.5px] text-muted">{rounds.length} 轮</span>
-          </div>
-          <div className="space-y-2">
-            {visibleRounds.map((round, index) => (
-              <details
-                key={`${round.userText}-${index}`}
-                className="group rounded-2xl border border-line bg-surface px-3.5 py-2.5"
-              >
-                <summary className="flex cursor-pointer list-none items-center gap-2.5">
-                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[9px] font-bold text-brand">
-                    U
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">
-                    {round.userText}
-                  </span>
-                  <span className="shrink-0 text-[10px] text-muted">
-                    {round.correctionsCount > 0
-                      ? `${round.correctionsCount} 处纠正`
-                      : '很自然'}
-                  </span>
-                </summary>
-                <div className="mt-2 space-y-1.5 border-t border-line pl-[30px] pt-2 text-[12px] leading-5">
-                  <p className="text-muted">
-                    <span className="font-medium text-ink">AI：</span>
-                    {round.replyText}
-                  </p>
-                  {round.optimizedFullSentence && (
-                    <p className="text-muted">
-                      <span className="font-medium text-ink">自然说法：</span>
-                      {round.optimizedFullSentence}
-                    </p>
-                  )}
-                </div>
-              </details>
-            ))}
-          </div>
-        </section>
-      )}
-
       {!settings.apiKey && (
         <button
           type="button"
           onClick={() => navigate('settings')}
-          className="mt-4 flex w-full min-h-[46px] items-center justify-center gap-2 rounded-2xl border border-line bg-surface text-[13px] font-medium text-brand"
+          className="mt-4 flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl border border-line bg-surface text-[13px] font-medium text-brand"
         >
           去设置里填写 MiMo API Key
           <ArrowRight className="size-3.5" />
         </button>
+      )}
+
+      {topic && (
+        <div
+          className="fixed inset-x-0 z-30 mx-auto w-full max-w-[520px] overflow-hidden border-t border-line bg-surface px-3 py-2"
+          style={{ bottom: 'calc(var(--nav-h, 4.25rem) - 2px)' }}
+        >
+          <div className="flex items-end gap-2">
+            <button
+              type="button"
+              onClick={() => changeInputMode(inputMode === 'voice' ? 'text' : 'voice')}
+              disabled={busy || recording}
+              aria-label={inputMode === 'voice' ? '切换到文字输入' : '切换到语音输入'}
+              className="flex size-10 shrink-0 items-center justify-center rounded-full text-ink transition active:bg-surface2 disabled:opacity-50"
+            >
+              <span className="relative flex size-5 items-center justify-center" aria-hidden="true">
+                <Keyboard
+                  className={classNames(
+                    'absolute size-5 transition-all duration-300',
+                    inputMode === 'voice'
+                      ? 'rotate-0 scale-100 opacity-100'
+                      : 'rotate-90 scale-75 opacity-0',
+                  )}
+                />
+                <Mic
+                  className={classNames(
+                    'absolute size-5 transition-all duration-300',
+                    inputMode === 'text'
+                      ? 'rotate-0 scale-100 opacity-100'
+                      : '-rotate-90 scale-75 opacity-0',
+                  )}
+                />
+              </span>
+            </button>
+
+            <div className="relative min-w-0 flex-1">
+              <div
+                ref={voiceLayerRef}
+                aria-hidden={inputMode !== 'voice'}
+                className={classNames(
+                  'flex w-full items-end gap-2 transition-all duration-200 ease-out',
+                  inputMode === 'voice'
+                    ? 'relative translate-x-0 opacity-100'
+                    : 'pointer-events-none absolute inset-x-0 bottom-0 -translate-x-3 opacity-0',
+                )}
+              >
+                <HoldToTalk
+                  busy={busy}
+                  busyLabel={stage === 'transcribing' ? '正在识别…' : 'AI 正在回复…'}
+                  onBeforeStart={handleBeforeStart}
+                  onComplete={processRecording}
+                  onError={reportError}
+                  onRecordingChange={handleRecordingChange}
+                />
+              </div>
+
+              <div
+                ref={textLayerRef}
+                aria-hidden={inputMode !== 'text'}
+                className={classNames(
+                  'flex w-full items-end gap-2 transition-all duration-200 ease-out',
+                  inputMode === 'text'
+                    ? 'relative translate-x-0 opacity-100'
+                    : 'pointer-events-none absolute inset-x-0 bottom-0 translate-x-3 opacity-0',
+                )}
+              >
+                <textarea
+                  ref={textareaRef}
+                  value={textDraft}
+                  onChange={handleDraftChange}
+                  disabled={busy}
+                  rows={1}
+                  aria-label="输入想说的英文"
+                  placeholder="输入英文…"
+                  className="max-h-24 min-h-[40px] flex-1 resize-none rounded-2xl border border-line bg-surface2 px-3 py-2 text-[15px] leading-6 text-ink placeholder:text-muted focus:border-brand focus:outline-none disabled:opacity-60"
+                />
+                <button
+                  type="button"
+                  onClick={handleSubmitText}
+                  disabled={busy || !textDraft.trim()}
+                  aria-label="发送"
+                  className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand text-white transition active:bg-brand-strong disabled:opacity-40 dark:text-[#1a1830]"
+                >
+                  {busy ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Send className="size-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

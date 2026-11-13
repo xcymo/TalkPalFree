@@ -10,6 +10,7 @@ import { SentenceCompare } from '../components/SentenceCompare';
 import { CorrectionsPanel } from '../components/CorrectionsPanel';
 import { ReplyCard } from '../components/ReplyCard';
 import { TopicFilter } from '../components/TopicFilter';
+import { useStickyBleed } from '../hooks/useStickyBleed';
 import type { Route } from '../hooks/useHashRoute';
 
 interface HistoryPageProps {
@@ -27,6 +28,7 @@ interface TopicGroup {
 export function HistoryPage({ navigate }: HistoryPageProps) {
   const [topicFilter, setTopicFilter] = useState('all');
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const stickyRef = useStickyBleed<HTMLDivElement>();
 
   const sessions =
     useLiveQuery(() => db.sessions.orderBy('createdAt').reverse().toArray(), []) ?? [];
@@ -89,14 +91,19 @@ export function HistoryPage({ navigate }: HistoryPageProps) {
       />
 
       {sessions.length > 0 && (
-        <TopicFilter
-          value={topicFilter}
-          options={topicOptions}
-          onChange={(value) => {
-            setTopicFilter(value);
-            setExpandedKey(null);
-          }}
-        />
+        <div
+          ref={stickyRef}
+          className="sticky-header sticky-safe sticky top-0 z-30 -mx-4 transform-gpu bg-bg px-4 pb-3 pt-2"
+        >
+          <TopicFilter
+            value={topicFilter}
+            options={topicOptions}
+            onChange={(value) => {
+              setTopicFilter(value);
+              setExpandedKey(null);
+            }}
+          />
+        </div>
       )}
 
       {sessions.length === 0 ? (

@@ -18,6 +18,7 @@ export function useRecorder({ onComplete, onError, maxSeconds = RECORDING.maxSec
   const startedAtRef = useRef(0);
   const intervalRef = useRef<number | null>(null);
   const startingRef = useRef(false);
+  const cancelledRef = useRef(false);
   const mountedRef = useRef(true);
 
   const onCompleteRef = useRef(onComplete);
@@ -43,12 +44,29 @@ export function useRecorder({ onComplete, onError, maxSeconds = RECORDING.maxSec
     const recorder = recorderRef.current;
     if (recorder && recorder.state !== 'inactive') {
       recorder.stop();
+      return;
     }
+    // 还在等待麦克风权限时松手，按取消处理，避免松开后继续录音
+    if (startingRef.current) cancelledRef.current = true;
   }, []);
+
+  const cancel = useCallback(() => {
+    cancelledRef.current = true;
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+      return;
+    }
+    if (!startingRef.current) cancelledRef.current = false;
+    clearTimer();
+    setSeconds(0);
+    setIsRecording(false);
+  }, [clearTimer]);
 
   const start = useCallback(async () => {
     if (startingRef.current || isRecording) return;
     startingRef.current = true;
+    cancelledRef.current = false;
 
     try {
       if (typeof MediaRecorder === 'undefined') {
@@ -64,7 +82,8 @@ export function useRecorder({ onComplete, onError, maxSeconds = RECORDING.maxSec
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
-      if (!mountedRef.current) {
+      if (!mountedRef.current || cancelledRef.current) {
+        cancelledRef.current = false;
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
@@ -91,6 +110,10 @@ export function useRecorder({ onComplete, onError, maxSeconds = RECORDING.maxSec
         chunksRef.current = [];
         setIsRecording(false);
         setSeconds(0);
+        if (cancelledRef.current) {
+          cancelledRef.current = false;
+          return;
+        }
         if (duration < RECORDING.minSeconds || blob.size < 800) {
           onErrorRef.current('录音太短了，按住按钮多说几句再试。');
           return;
@@ -134,7 +157,7 @@ export function useRecorder({ onComplete, onError, maxSeconds = RECORDING.maxSec
     };
   }, [clearTimer, releaseStream]);
 
-  return { isRecording, seconds, start, stop };
+  return { isRecording, seconds, start, stop, cancel };
 }
 
 function recordingErrorMessage(error: unknown): string {

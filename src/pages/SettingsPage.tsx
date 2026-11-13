@@ -77,7 +77,9 @@ export function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="设置" subtitle="Key 和练习数据都只留在本机浏览器" />
+      <div className="sticky-header sticky-safe sticky top-0 z-30 -mx-4 transform-gpu bg-bg px-4">
+        <PageHeader title="设置" subtitle="Key 和练习数据都只留在本机浏览器" />
+      </div>
 
       <Section
         title="MiMo API Key"

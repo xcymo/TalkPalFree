@@ -92,6 +92,46 @@ button {
   color: #fff;
 }
 
+.app-pattern {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--bg);
+  background-image: radial-gradient(
+    90% 55% at 18% 0%,
+    color-mix(in srgb, var(--brand) 9%, transparent),
+    transparent 70%
+  );
+  background-repeat: no-repeat;
+}
+
+.app-pattern::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: none;
+  background-image: linear-gradient(135deg, #4f46e5, #7c3aed 55%, #d946ef);
+  -webkit-mask-image: url('/pattern.svg');
+  mask-image: url('/pattern.svg');
+  -webkit-mask-size: 720px 1480px;
+  mask-size: 720px 1480px;
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
+  opacity: 0.14;
+  pointer-events: none;
+}
+
+@supports ((mask-image: url('/pattern.svg')) or (-webkit-mask-image: url('/pattern.svg'))) {
+  .app-pattern::before {
+    display: block;
+  }
+}
+
+.dark .app-pattern::before {
+  background-image: linear-gradient(135deg, #9b9af5, #c4b5fd 55%, #f0abfc);
+  opacity: 0.16;
+}
+
 .typing-dot {
   animation: typing-dot 1s ease-in-out infinite;
 }

@@ -17,7 +17,7 @@ export default function App() {
       <ToastProvider>
         <ErrorBoundary>
           <PracticeProvider>
-            <div className="mx-auto min-h-dvh w-full max-w-[520px] px-4 pb-28 pt-safe">
+            <div className="app-pattern mx-auto min-h-dvh w-full max-w-[520px] px-4 pb-28 pt-safe">
               {route === 'today' && <TodayPage navigate={navigate} />}
               {route === 'practice' && <PracticePage navigate={navigate} />}
               {route === 'history' && <HistoryPage navigate={navigate} />}

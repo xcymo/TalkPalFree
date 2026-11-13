@@ -139,3 +139,9 @@ export function pickRecorderMimeType(): string | undefined {
   ];
   return candidates.find((type) => MediaRecorder.isTypeSupported(type));
 }
+
+/** 我们发出的 WAV 固定为 16kHz 单声道 16-bit PCM，44 字节头。 */
+export function getWavDurationSeconds(blob: Blob, sampleRate = 16_000): number {
+  const dataBytes = Math.max(0, blob.size - 44);
+  return dataBytes / (sampleRate * 2);
+}

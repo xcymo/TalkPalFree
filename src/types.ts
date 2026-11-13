@@ -56,8 +56,13 @@ export interface AudioCacheRecord {
 }
 
 export interface UsageRecord {
+  /** LLM 总 token（兼容旧记录与展示） */
   llmTokens: number;
+  llmInputTokens: number;
+  llmCachedInputTokens: number;
+  llmOutputTokens: number;
   asrRequests: number;
+  asrSeconds: number;
   ttsChars: number;
   updatedAt: number;
 }

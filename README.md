@@ -48,7 +48,7 @@ Vite 已配置 `host: true`，同一 Wi-Fi 下可直接访问（但录音仍需 
 2. 在控制台创建 API Key（通常以控制台实际展示为准）。
 3. 回到 App 的「设置」页，粘贴 Key → 保存。
 
-Key 只写入当前浏览器的 `localStorage`（键名 `spoken-english:settings`），所有请求只发往：
+Key 只写入当前浏览器的 `localStorage`（键名 `spoken-english:settings`）。对话、ASR、TTS 请求直接发往：
 
 ```text
 https://api.xiaomimimo.com/v1
@@ -145,6 +145,17 @@ Authorization: Bearer <你的 Key>
 
 **音频缓存**：以 `voice + 文本长度 + 文本哈希` 作为 key，把音频 Blob 存进 IndexedDB 的 `audioCache`。同一段回复再次播放会直接读缓存，不再请求 TTS；播放控件支持播放 / 暂停。缓存最多保留 120 条，超出后按创建时间清理最旧的。
 
+### 4. 费用估算
+
+本项目坚持纯前端，不查询账户余额：MiMo 的财务余额接口没有开放浏览器 CORS。余额请直接到 MiMo 控制台查看；设置页只保留按本机用量估算的模型费用：
+
+- LLM：使用响应里的 `prompt_tokens`、`completion_tokens` 和 `prompt_tokens_details.cached_tokens`，分别按输入、缓存命中、输出计价。
+- ASR：按实际发送的 16kHz WAV 时长（秒）折算，`¥0.5 / 小时`。
+- TTS：当前限时免费，只统计字符数。
+- `mimo-v2.6-flash` 国内价格：输入 ¥1 / 百万 tokens，缓存命中 ¥0.02 / 百万，输出 ¥2 / 百万。
+
+价格为 2026-10-21 版，集中配置在 `src/lib/pricing.ts`。旧版本记录没有输入/输出拆分和音频时长，会按总量折算并标注为估算值；最终扣费请以 MiMo 控制台账单为准。
+
 ---
 
 ## 数据存储
@@ -156,7 +167,7 @@ IndexedDB 数据库名：`spoken-english`（Dexie，定义在 `src/lib/db.ts`）
 | `topics` | `dateKey`（`YYYY-MM-DD`） | 当天话题，每天一条 |
 | `sessions` | 自增 `id` + `dateKey` / `topicId` 索引 | 每一轮练习：原文、纠错、优化句、AI 回复、音色、TTS 缓存 key、时间。历史页会把同一天同一话题的多轮合并为一条记录 |
 | `audioCache` | `key` | TTS 音频 Blob 及其文本 / 音色 |
-| `meta` | `key` | 用量估算（`usage:total`、`usage:YYYY-MM-DD`） |
+| `meta` | `key` | 用量与计费明细：LLM 输入/缓存/输出 tokens、ASR 请求次数与音频秒数、TTS 字符数（`usage:total`、`usage:YYYY-MM-DD`） |
 
 localStorage 只存设置：API Key、音色、主题、自动播放。
 
@@ -191,6 +202,7 @@ localStorage 只存设置：API Key、音色、主题、自动播放。
    │  ├─ ErrorBoundary.tsx
    │  ├─ PageHeader.tsx
    │  ├─ HoldToTalk.tsx        # 按住说话、上滑取消
+   │  ├─ PracticeChat.tsx      # 练习对话气泡与自动播放控制
    │  ├─ ReplyCard.tsx
    │  ├─ SentenceCompare.tsx  # 原句 / 优化句对照
    │  ├─ Spinner.tsx
@@ -208,11 +220,13 @@ localStorage 只存设置：API Key、音色、主题、自动播放。
    │  ├─ usePractice.tsx       # App 级练习流程（切换页面不中断 ASR/LLM）
    │  ├─ useRecorder.ts        # MediaRecorder + 权限 + 计时 + 自动停止
    │  ├─ useSettings.tsx       # 设置 Context + 主题应用
+   │  ├─ useStickyBleed.ts     # 固定头部/底栏滚动淡出效果
    │  └─ useTts.ts             # TTS 播放 / 暂停 + 缓存
    ├─ lib/
    │  ├─ api.ts                # ASR / LLM / TTS 封装、错误映射、JSON 宽松解析
    │  ├─ audio.ts              # 转 16k 单声道 WAV、base64、MIME 选择
    │  ├─ db.ts                 # Dexie schema 与读写封装
+   │  ├─ pricing.ts            # 官方价格表与费用估算
    │  ├─ schemas.ts            # 纠错 / 话题提示词与 JSON schema
    │  ├─ settings.ts           # localStorage 设置 + 主题
    │  ├─ topicService.ts       # 每日话题生成 / 换话题（含并发去重）
@@ -304,7 +318,7 @@ localStorage 只存设置：API Key、音色、主题、自动播放。
 
 - **麦克风需要 HTTPS 或 localhost**，局域网 HTTP 地址无法录音。
 - 浏览器自动播放策略可能拦截 AI 回复的自动播放，此时会出现提示，手动点播放即可（也可在设置关闭自动播放）。
-- 纯前端直连 MiMo API 依赖服务端允许 CORS。如果遇到浏览器 CORS 报错，需要官方放开跨域，或自行加一个仅做转发的本地代理（这会引入后端，超出本项目的纯前端定位）。
+- 对话、ASR、TTS 端点支持浏览器 CORS；MiMo 的财务余额接口不支持，因此本项目不查询余额，需要看余额时请到 MiMo 控制台。
 - 用量是按 API 返回的 LLM tokens + ASR/TTS 估算的前端参考值，实际计费以 MiMo 控制台为准。
 - ASR 官方目前只支持 wav/mp3；如果未来格式变化，请按官方文档调整 `src/lib/api.ts` 和 `src/lib/audio.ts`。
 

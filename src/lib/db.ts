@@ -74,21 +74,44 @@ export async function putTtsBlob(
 
 const emptyUsage = (): UsageRecord => ({
   llmTokens: 0,
+  llmInputTokens: 0,
+  llmCachedInputTokens: 0,
+  llmOutputTokens: 0,
   asrRequests: 0,
+  asrSeconds: 0,
   ttsChars: 0,
   updatedAt: Date.now(),
 });
+
+function normalizeUsage(value?: Partial<UsageRecord> | null): UsageRecord {
+  const base = emptyUsage();
+  if (!value) return base;
+  return {
+    ...base,
+    ...value,
+    llmInputTokens: value.llmInputTokens ?? 0,
+    llmCachedInputTokens: value.llmCachedInputTokens ?? 0,
+    llmOutputTokens: value.llmOutputTokens ?? 0,
+    asrSeconds: value.asrSeconds ?? 0,
+    updatedAt: value.updatedAt ?? Date.now(),
+  };
+}
 
 export async function trackUsage(delta: Partial<Omit<UsageRecord, 'updatedAt'>>): Promise<void> {
   const keys = ['usage:total', `usage:${toDateKey()}`];
   for (const key of keys) {
     const current = (await db.meta.get(key))?.value as UsageRecord | undefined;
-    const base = current ?? emptyUsage();
+    const base = normalizeUsage(current);
     await db.meta.put({
       key,
       value: {
         llmTokens: base.llmTokens + (delta.llmTokens ?? 0),
+        llmInputTokens: base.llmInputTokens + (delta.llmInputTokens ?? 0),
+        llmCachedInputTokens:
+          base.llmCachedInputTokens + (delta.llmCachedInputTokens ?? 0),
+        llmOutputTokens: base.llmOutputTokens + (delta.llmOutputTokens ?? 0),
         asrRequests: base.asrRequests + (delta.asrRequests ?? 0),
+        asrSeconds: base.asrSeconds + (delta.asrSeconds ?? 0),
         ttsChars: base.ttsChars + (delta.ttsChars ?? 0),
         updatedAt: Date.now(),
       } satisfies UsageRecord,
@@ -98,12 +121,12 @@ export async function trackUsage(delta: Partial<Omit<UsageRecord, 'updatedAt'>>)
 
 export async function getUsage(dateKey = toDateKey()): Promise<UsageRecord> {
   const value = (await db.meta.get(`usage:${dateKey}`))?.value as UsageRecord | undefined;
-  return value ?? emptyUsage();
+  return normalizeUsage(value);
 }
 
 export async function getTotalUsage(): Promise<UsageRecord> {
   const value = (await db.meta.get('usage:total'))?.value as UsageRecord | undefined;
-  return value ?? emptyUsage();
+  return normalizeUsage(value);
 }
 
 export async function clearAllData(): Promise<void> {

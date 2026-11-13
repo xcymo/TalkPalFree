@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
@@ -18,6 +18,7 @@ import {
 import type { ThemeMode, UsageRecord } from '../types';
 import { API_BASE_URL, MODELS } from '../config/models';
 import { clearAllData, getTotalUsage, getUsage } from '../lib/db';
+import { calculateUsageCost, formatMoney, formatSeconds } from '../lib/pricing';
 import { useSettings } from '../hooks/useSettings';
 import { useToast } from '../components/Toast';
 import { PageHeader } from '../components/PageHeader';
@@ -25,7 +26,16 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { VoiceSelect } from '../components/VoiceSelect';
 import { classNames } from '../lib/utils';
 
-const EMPTY_USAGE: UsageRecord = { llmTokens: 0, asrRequests: 0, ttsChars: 0, updatedAt: 0 };
+const EMPTY_USAGE: UsageRecord = {
+  llmTokens: 0,
+  llmInputTokens: 0,
+  llmCachedInputTokens: 0,
+  llmOutputTokens: 0,
+  asrRequests: 0,
+  asrSeconds: 0,
+  ttsChars: 0,
+  updatedAt: 0,
+};
 
 const THEMES: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
   { value: 'system', label: '跟随系统', icon: Monitor },
@@ -33,8 +43,14 @@ const THEMES: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
   { value: 'dark', label: '深色', icon: Moon },
 ];
 
-function estimateTokens(usage: UsageRecord): number {
-  return usage.llmTokens + usage.asrRequests * 150 + Math.ceil(usage.ttsChars / 4);
+function formatNumber(value: number): string {
+  return value.toLocaleString('zh-CN');
+}
+
+function formatAsrUsage(usage: UsageRecord): string {
+  const count = formatNumber(usage.asrRequests);
+  if (usage.asrSeconds <= 0) return `${count} 次`;
+  return `${count} 次（${formatSeconds(usage.asrSeconds)}）`;
 }
 
 export function SettingsPage() {
@@ -72,6 +88,9 @@ export function SettingsPage() {
     0,
     THEMES.findIndex((theme) => theme.value === settings.theme),
   );
+
+  const todayCost = useMemo(() => calculateUsageCost(todayUsage), [todayUsage]);
+  const totalCost = useMemo(() => calculateUsageCost(totalUsage), [totalUsage]);
 
   const saveKey = () => {
     const trimmed = keyDraft.trim();
@@ -253,19 +272,52 @@ export function SettingsPage() {
       </Section>
 
       <Section
-        title="用量估算"
-        description="仅前端粗略统计，实际计费请以 MiMo 控制台为准。"
+        title="用量与费用"
+        description="按 MiMo 官方价目表在本机估算，实际扣费以控制台账单为准。"
         icon={Gauge}
       >
         <div className="grid grid-cols-2 gap-2.5">
-          <UsageCard label="今日" usage={todayUsage} />
-          <UsageCard label="累计" usage={totalUsage} />
+          <CostCard label="今日费用" amount={todayCost.total} />
+          <CostCard label="累计费用" amount={totalCost.total} />
         </div>
-        <div className="mt-3 space-y-1.5 rounded-xl bg-surface2 px-3 py-2.5 text-[11px] text-muted">
-          <p>LLM tokens（服务端返回）：今日 {todayUsage.llmTokens} · 累计 {totalUsage.llmTokens}</p>
-          <p>ASR 请求：今日 {todayUsage.asrRequests} 次 · 累计 {totalUsage.asrRequests} 次</p>
-          <p>TTS 字符：今日 {todayUsage.ttsChars} · 累计 {totalUsage.ttsChars}</p>
+
+        <div className="mt-3 overflow-hidden rounded-xl border border-line bg-surface">
+          <div className="flex items-center justify-between border-b border-line bg-surface2 px-3 py-2 text-[10px] font-medium text-muted">
+            <span>模型费用</span>
+            <span>今日 / 累计</span>
+          </div>
+          <div className="divide-y divide-line">
+            <CostLine
+              label="LLM · v2.6-flash"
+              today={todayCost.llm}
+              total={totalCost.llm}
+            />
+            <CostLine
+              label="ASR · v2.5"
+              today={todayCost.asr}
+              total={totalCost.asr}
+            />
+            <CostLine label="TTS · v2.5" today={0} total={0} free />
+          </div>
         </div>
+
+        <div className="mt-3 space-y-1.5 rounded-xl bg-surface2 px-3 py-2.5 text-[10.5px] leading-5 text-muted">
+          <p>
+            LLM token：今日 {formatNumber(todayUsage.llmTokens)} · 累计{' '}
+            {formatNumber(totalUsage.llmTokens)}
+          </p>
+          <p>
+            ASR：今日 {formatAsrUsage(todayUsage)} · 累计 {formatAsrUsage(totalUsage)}
+          </p>
+          <p>
+            TTS 字符：今日 {formatNumber(todayUsage.ttsChars)} · 累计{' '}
+            {formatNumber(totalUsage.ttsChars)}
+          </p>
+        </div>
+
+        <p className="mt-2 text-[10px] leading-5 text-muted">
+          按国内价格估算，TTS 当前限时免费；旧记录缺少明细时按总量折算。
+        </p>
       </Section>
 
       <Section title="数据" icon={ShieldCheck}>
@@ -336,15 +388,47 @@ function Section({
   );
 }
 
-function UsageCard({ label, usage }: { label: string; usage: UsageRecord }) {
+function CostCard({
+  label,
+  amount,
+}: {
+  label: string;
+  amount: number;
+}) {
   return (
     <div className="rounded-2xl border border-line bg-surface2 px-3 py-2.5">
       <p className="text-[10.5px] text-muted">{label}</p>
       <p className="mt-1 text-[18px] font-semibold leading-none text-ink">
-        {estimateTokens(usage)}
-        <span className="ml-1 text-[10px] font-normal text-muted">tokens ≈</span>
+        {formatMoney(amount)}
       </p>
-      <p className="mt-1.5 text-[10px] text-muted">{usage.llmTokens + usage.ttsChars > 0 ? '含实际与估算' : '还没有消耗'}</p>
+      <p className="mt-1.5 text-[10px] text-muted">按官方价格估算</p>
+    </div>
+  );
+}
+
+function CostLine({
+  label,
+  today,
+  total,
+  free,
+}: {
+  label: string;
+  today: number;
+  total: number;
+  free?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-3 py-2">
+      <span className="min-w-0 truncate text-[11.5px] text-ink">{label}</span>
+      {free ? (
+        <span className="shrink-0 text-[10.5px] text-muted">限时免费</span>
+      ) : (
+        <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-ink">
+          {formatMoney(today)}
+          <span className="mx-1 text-muted">/</span>
+          <span className="text-muted">{formatMoney(total)}</span>
+        </span>
+      )}
     </div>
   );
 }

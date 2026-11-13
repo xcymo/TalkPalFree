@@ -1,7 +1,7 @@
 import { API_BASE_URL, MODELS } from '../config/models';
 import { pickRandomPoolItems, type TopicPoolItem } from '../data/topics';
 import type { Correction, CorrectionResult, CorrectionType, TopicDraft } from '../types';
-import { blobToBase64, base64ToBlob } from './audio';
+import { blobToBase64, base64ToBlob, getWavDurationSeconds } from './audio';
 import { getTtsBlob, putTtsBlob, trackUsage } from './db';
 import {
   CUSTOM_TOPIC_SYSTEM_PROMPT,
@@ -35,9 +35,15 @@ export function errorMessage(error: unknown): string {
 
 type Json = Record<string, unknown>;
 
-async function chatRequest(
+interface ApiRequestOptions {
+  method: 'GET' | 'POST';
+  body?: Json;
+}
+
+async function apiRequest(
   apiKey: string,
-  body: Json,
+  path: string,
+  options: ApiRequestOptions,
   timeoutMs = 60_000,
 ): Promise<Json> {
   if (!apiKey.trim()) {
@@ -48,13 +54,15 @@ async function chatRequest(
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`${API_BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey.trim()}`,
-      },
-      body: JSON.stringify(body),
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${apiKey.trim()}`,
+    };
+    if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: options.method,
+      headers,
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
       signal: controller.signal,
     });
 
@@ -84,6 +92,10 @@ async function chatRequest(
   }
 }
 
+function chatRequest(apiKey: string, body: Json, timeoutMs = 60_000): Promise<Json> {
+  return apiRequest(apiKey, '/chat/completions', { method: 'POST', body }, timeoutMs);
+}
+
 function httpError(status: number, data: Json | null, raw: string): ApiError {
   const errorObject = (data?.error ?? {}) as { message?: string; code?: string };
   const serverMessage =
@@ -107,6 +119,26 @@ function httpError(status: number, data: Json | null, raw: string): ApiError {
   }
 
   return new ApiError(serverMessage || `HTTP ${status}`, friendly, status);
+}
+
+interface LlmUsagePayload {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
+}
+
+async function trackLlmUsage(usage: LlmUsagePayload | null | undefined): Promise<void> {
+  if (!usage) return;
+  const input = Math.max(0, usage.prompt_tokens ?? 0);
+  const output = Math.max(0, usage.completion_tokens ?? 0);
+  const cached = Math.min(input, Math.max(0, usage.prompt_tokens_details?.cached_tokens ?? 0));
+  await trackUsage({
+    llmTokens: Math.max(0, usage.total_tokens ?? input + output),
+    llmInputTokens: input,
+    llmCachedInputTokens: cached,
+    llmOutputTokens: output,
+  });
 }
 
 function extractMessageText(data: Json): string {
@@ -174,7 +206,10 @@ export async function transcribeAudio(apiKey: string, wavBlob: Blob): Promise<st
   if (!text) {
     throw new ApiError('empty asr result', '没有听清这次录音，请靠近麦克风再说一次。');
   }
-  await trackUsage({ asrRequests: 1 });
+  await trackUsage({
+    asrRequests: 1,
+    asrSeconds: getWavDurationSeconds(wavBlob),
+  });
   return text;
 }
 
@@ -237,6 +272,8 @@ export async function correctAndReply({
     90_000,
   );
 
+  await trackLlmUsage(data.usage as LlmUsagePayload | undefined);
+
   const raw = extractMessageText(data);
   const parsed = parseJsonLoose<Partial<CorrectionResult>>(raw);
 
@@ -244,9 +281,6 @@ export async function correctAndReply({
   if (!replyText) {
     throw new ApiError('missing reply', 'AI 返回的回复不完整，请再说一次试试。');
   }
-
-  const usage = data.usage as { total_tokens?: number } | undefined;
-  await trackUsage({ llmTokens: usage?.total_tokens ?? 0 });
 
   return {
     corrections: normalizeCorrections(parsed.corrections),
@@ -314,6 +348,8 @@ export async function generateDailyTopic(
       60_000,
     );
 
+    await trackLlmUsage(data.usage as LlmUsagePayload | undefined);
+
     const parsed = parseJsonLoose<Partial<TopicDraft>>(extractMessageText(data));
     if (!parsed.title_en || !parsed.title_zh || !parsed.prompt_zh) {
       throw new ApiError('invalid topic', '话题生成结果不完整');
@@ -327,9 +363,6 @@ export async function generateDailyTopic(
           .includes(item.scene.split(' ')[0].toLowerCase()),
       ) ??
       candidates[0];
-
-    const usage = data.usage as { total_tokens?: number } | undefined;
-    await trackUsage({ llmTokens: usage?.total_tokens ?? 0 });
 
     return {
       source: 'llm',
@@ -371,13 +404,12 @@ export async function generateCustomTopic(
     60_000,
   );
 
+  await trackLlmUsage(data.usage as LlmUsagePayload | undefined);
+
   const parsed = parseJsonLoose<Partial<TopicDraft>>(extractMessageText(data));
   if (!parsed.title_en || !parsed.title_zh || !parsed.prompt_zh) {
     throw new ApiError('invalid topic', '话题生成结果不完整，请换个关键词再试。');
   }
-
-  const usage = data.usage as { total_tokens?: number } | undefined;
-  await trackUsage({ llmTokens: usage?.total_tokens ?? 0 });
 
   return {
     scene_en: parsed.scene_en?.trim() || keyword.trim(),
@@ -389,7 +421,8 @@ export async function generateCustomTopic(
   };
 }
 
-export async function getOrCreateTtsBlob(apiKey: string, text: string, voice: string): Promise<Blob> {  const key = ttsCacheKey(text, voice);
+export async function getOrCreateTtsBlob(apiKey: string, text: string, voice: string): Promise<Blob> {
+  const key = ttsCacheKey(text, voice);
   const cached = await getTtsBlob(key);
   if (cached) return cached;
 

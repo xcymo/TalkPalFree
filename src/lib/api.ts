@@ -4,10 +4,12 @@ import type { Correction, CorrectionResult, CorrectionType, TopicDraft } from '.
 import { blobToBase64, base64ToBlob } from './audio';
 import { getTtsBlob, putTtsBlob, trackUsage } from './db';
 import {
-  CORRECTION_SYSTEM_PROMPT,
+  CUSTOM_TOPIC_SYSTEM_PROMPT,
   TOPIC_SYSTEM_PROMPT,
   TTS_STYLE_INSTRUCTION,
+  buildCorrectionSystemPrompt,
   buildCorrectionUserPrompt,
+  buildCustomTopicUserPrompt,
   buildTopicUserPrompt,
 } from './schemas';
 import { ttsCacheKey } from './utils';
@@ -202,6 +204,9 @@ export interface CorrectionRequest {
   utterance: string;
 }
 
+/** 每次纠错请求最多带上的历史消息条数（一问一答算两条）。 */
+const HISTORY_MESSAGE_LIMIT = 16;
+
 export async function correctAndReply({
   apiKey,
   topic,
@@ -213,14 +218,14 @@ export async function correctAndReply({
     {
       model: MODELS.llm,
       messages: [
-        { role: 'system', content: CORRECTION_SYSTEM_PROMPT },
-        ...history.slice(-6).map((message) => ({
+        { role: 'system', content: buildCorrectionSystemPrompt(topic) },
+        ...history.slice(-HISTORY_MESSAGE_LIMIT).map((message) => ({
           role: message.role,
           content: message.content,
         })),
         {
           role: 'user',
-          content: buildCorrectionUserPrompt({ topic, utterance }),
+          content: buildCorrectionUserPrompt({ utterance }),
         },
       ],
       response_format: { type: 'json_object' },
@@ -273,6 +278,7 @@ function fallbackTopic(item: TopicPoolItem): GeneratedTopic {
       title_zh: item.titleZh,
       prompt_zh: item.promptZh,
       icebreaker_en: item.icebreakerEn,
+      icebreaker_zh: item.icebreakerZh,
     },
   };
 }
@@ -333,6 +339,7 @@ export async function generateDailyTopic(
         title_zh: parsed.title_zh.trim(),
         prompt_zh: parsed.prompt_zh.trim(),
         icebreaker_en: parsed.icebreaker_en?.trim() || matched.icebreakerEn,
+        icebreaker_zh: parsed.icebreaker_zh?.trim() || matched.icebreakerZh,
       },
     };
   } catch (error) {
@@ -343,8 +350,45 @@ export async function generateDailyTopic(
   }
 }
 
-export async function getOrCreateTtsBlob(apiKey: string, text: string, voice: string): Promise<Blob> {
-  const key = ttsCacheKey(text, voice);
+export async function generateCustomTopic(
+  apiKey: string,
+  keyword: string,
+  usedTitles: string[] = [],
+): Promise<TopicDraft> {
+  const data = await chatRequest(
+    apiKey,
+    {
+      model: MODELS.llm,
+      messages: [
+        { role: 'system', content: CUSTOM_TOPIC_SYSTEM_PROMPT },
+        { role: 'user', content: buildCustomTopicUserPrompt(keyword, usedTitles.slice(-10)) },
+      ],
+      response_format: { type: 'json_object' },
+      thinking: { type: 'disabled' },
+      max_completion_tokens: 700,
+    },
+    60_000,
+  );
+
+  const parsed = parseJsonLoose<Partial<TopicDraft>>(extractMessageText(data));
+  if (!parsed.title_en || !parsed.title_zh || !parsed.prompt_zh) {
+    throw new ApiError('invalid topic', '话题生成结果不完整，请换个关键词再试。');
+  }
+
+  const usage = data.usage as { total_tokens?: number } | undefined;
+  await trackUsage({ llmTokens: usage?.total_tokens ?? 0 });
+
+  return {
+    scene_en: parsed.scene_en?.trim() || keyword.trim(),
+    title_en: parsed.title_en.trim(),
+    title_zh: parsed.title_zh.trim(),
+    prompt_zh: parsed.prompt_zh.trim(),
+    icebreaker_en: parsed.icebreaker_en?.trim() || '',
+    icebreaker_zh: parsed.icebreaker_zh?.trim() || '',
+  };
+}
+
+export async function getOrCreateTtsBlob(apiKey: string, text: string, voice: string): Promise<Blob> {  const key = ttsCacheKey(text, voice);
   const cached = await getTtsBlob(key);
   if (cached) return cached;
 

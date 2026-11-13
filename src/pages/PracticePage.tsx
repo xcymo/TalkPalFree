@@ -214,7 +214,7 @@ export function PracticePage({ navigate }: PracticePageProps) {
         />
       )}
 
-      {(rounds.length > 0 || stage !== 'idle') && (
+      {(rounds.length > 0 || stage !== 'idle' || Boolean(topic?.icebreaker_en)) && (
         <div className="mt-4">
           <PracticeChat
             rounds={rounds}
@@ -222,6 +222,9 @@ export function PracticePage({ navigate }: PracticePageProps) {
             onAutoPlayed={handleAutoPlayed}
             pendingUserText={pendingUserText}
             stage={stage}
+            openingText={topic?.icebreaker_en}
+            openingTranslation={topic?.icebreaker_zh}
+            voice={settings.voice}
           />
         </div>
       )}

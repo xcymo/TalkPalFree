@@ -11,6 +11,9 @@ interface PracticeChatProps {
   onAutoPlayed: () => void;
   pendingUserText: string | null;
   stage: PracticeStage;
+  openingText?: string;
+  openingTranslation?: string;
+  voice: string;
 }
 
 /** 连续的对话记录：你的消息靠右，AI 回复靠左，不做轮次分组。 */
@@ -20,9 +23,27 @@ export function PracticeChat({
   onAutoPlayed,
   pendingUserText,
   stage,
+  openingText,
+  openingTranslation,
+  voice,
 }: PracticeChatProps) {
   return (
     <div className="space-y-3">
+      {openingText && (
+        <div className="flex justify-start animate-fade-up">
+          <div className="w-fit min-w-0 max-w-[94%]">
+            <ReplyCard
+              text={openingText}
+              translation={openingTranslation}
+              voice={voice}
+              hideAvatar
+              collapsibleTranslation
+              label="开场白"
+            />
+          </div>
+        </div>
+      )}
+
       {rounds.map((round) => (
         <ChatExchange
           key={round.id ?? round.createdAt}
@@ -56,13 +77,13 @@ export function PracticeChat({
                 aria-label="AI 正在回复"
                 className="flex items-center gap-1.5 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-4 shadow-card"
               >
-                <span className="size-1.5 rounded-full bg-muted animate-typing-dot" />
+                <span className="size-1.5 rounded-full bg-muted typing-dot" />
                 <span
-                  className="size-1.5 rounded-full bg-muted animate-typing-dot"
+                  className="size-1.5 rounded-full bg-muted typing-dot"
                   style={{ animationDelay: '0.15s' }}
                 />
                 <span
-                  className="size-1.5 rounded-full bg-muted animate-typing-dot"
+                  className="size-1.5 rounded-full bg-muted typing-dot"
                   style={{ animationDelay: '0.3s' }}
                 />
               </div>

@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ChevronRight, Flame, KeyRound, Lightbulb, Mic } from 'lucide-react';
+import { ChevronRight, Flame, KeyRound, Mic, PenLine } from 'lucide-react';
 import type { TopicRecord } from '../types';
 import { db } from '../lib/db';
 import { errorMessage } from '../lib/api';
-import { ensureTodayTopic, regenerateTodayTopic } from '../lib/topicService';
+import { ensureTodayTopic, generateCustomTodayTopic, regenerateTodayTopic } from '../lib/topicService';
 import { calculateStreak, formatHeaderDate, getGreeting, toDateKey } from '../lib/utils';
 import { useSettings } from '../hooks/useSettings';
 import { useToast } from '../components/Toast';
 import { TopicCard } from '../components/TopicCard';
 import { ErrorBanner } from '../components/ErrorBanner';
+import { Spinner } from '../components/Spinner';
 import { Info } from 'lucide-react';
 import type { Route } from '../hooks/useHashRoute';
 
@@ -26,6 +27,28 @@ export function TodayPage({ navigate }: TodayPageProps) {
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customKeyword, setCustomKeyword] = useState('');
+  const [customGenerating, setCustomGenerating] = useState(false);
+
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const [contentPad, setContentPad] = useState(0);
+
+  // 标题区固定后，用它的实际高度（含安全区）给内容留出空间
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    const parent = rootRef.current?.parentElement;
+    if (!header || !parent) return;
+    const apply = () => {
+      const parentPad = parseFloat(getComputedStyle(parent).paddingTop) || 0;
+      setContentPad(Math.max(0, header.offsetHeight - parentPad + 8));
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
 
   const sessions =
     useLiveQuery(() => db.sessions.orderBy('createdAt').reverse().toArray(), []) ?? [];
@@ -53,6 +76,7 @@ export function TodayPage({ navigate }: TodayPageProps) {
   }, []);
 
   const handleRegenerate = useCallback(async () => {
+    if (regenerating || customGenerating) return;
     setRegenerating(true);
     setError(null);
     try {
@@ -65,19 +89,42 @@ export function TodayPage({ navigate }: TodayPageProps) {
     } finally {
       setRegenerating(false);
     }
-  }, [settings.apiKey, topic, toast]);
+  }, [settings.apiKey, topic, toast, regenerating, customGenerating]);
+
+  const handleCustomGenerate = useCallback(async () => {
+    const keyword = customKeyword.trim();
+    if (!keyword || customGenerating || regenerating) return;
+    setCustomGenerating(true);
+    setError(null);
+    try {
+      const result = await generateCustomTodayTopic(settings.apiKey, keyword, topic ?? null);
+      setTopic(result.topic);
+      setWarning(null);
+      setCustomOpen(false);
+      setCustomKeyword('');
+      toast('已按关键词生成新话题', 'success');
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setCustomGenerating(false);
+    }
+  }, [customKeyword, customGenerating, regenerating, settings.apiKey, topic, toast]);
 
   const todaySessions = sessions.filter((session) => session.dateKey === dateKey);
   const streak = calculateStreak(sessions.map((session) => session.dateKey));
 
   return (
-    <div>
-      <header className="pb-4 pt-2">
-        <p className="text-[12px] text-muted">{formatHeaderDate()}</p>
-        <h1 className="mt-1 text-[25px] font-semibold leading-tight tracking-tight text-ink">
-          {getGreeting()}，来说两句吧
-        </h1>
-      </header>
+    <div ref={rootRef} style={{ paddingTop: contentPad }}>
+      <div ref={headerRef} className="fixed inset-x-0 top-0 z-30 bg-bg">
+        <div className="pt-safe mx-auto w-full max-w-[520px] px-4">
+          <header className="pb-4 pt-2">
+            <p className="text-[12px] text-muted">{formatHeaderDate()}</p>
+            <h1 className="mt-1 text-[25px] font-semibold leading-tight tracking-tight text-ink">
+              {getGreeting()}，来说两句吧
+            </h1>
+          </header>
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 gap-3 pb-4">
         <div className="rounded-2xl border border-line bg-surface px-4 py-3.5 shadow-card">
@@ -144,10 +191,66 @@ export function TodayPage({ navigate }: TodayPageProps) {
         onStart={() => navigate('practice')}
       />
 
-      <div className="mt-4 flex items-start gap-2 px-1 text-[11.5px] leading-5 text-muted">
-        <Lightbulb className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-        <p>先开口，再看纠错。每轮只要 1 分钟，连续几天你会明显感觉到变化。</p>
-      </div>
+      {topic !== undefined && (
+        <div className="mt-3">
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                setCustomOpen((value) => !value);
+                if (error) setError(null);
+              }}
+              className="flex items-center gap-1.5 text-[11.5px] text-muted transition active:opacity-70"
+            >
+              <PenLine className="size-3" />
+              想聊别的？输入关键词生成话题
+            </button>
+          </div>
+
+          {customOpen && (
+            <div className="mt-2.5 rounded-2xl border border-line bg-surface p-3 shadow-card animate-fade-up">
+              <div className="flex items-center gap-2">
+                <input
+                  value={customKeyword}
+                  onChange={(event) => {
+                    setCustomKeyword(event.target.value);
+                    if (error) setError(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      void handleCustomGenerate();
+                    }
+                  }}
+                  placeholder="比如：机场转机、面试、租房"
+                  maxLength={40}
+                  autoFocus
+                  aria-label="输入话题关键词"
+                  className="min-h-[40px] min-w-0 flex-1 rounded-xl border border-line bg-surface2 px-3 text-[13.5px] text-ink placeholder:text-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand-soft"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleCustomGenerate()}
+                  disabled={!customKeyword.trim() || customGenerating || regenerating}
+                  className="flex min-h-[40px] shrink-0 items-center justify-center gap-1.5 rounded-xl bg-brand px-3.5 text-[12.5px] font-semibold text-white transition active:bg-brand-strong disabled:opacity-50 dark:text-[#1a1830]"
+                >
+                  {customGenerating ? (
+                    <>
+                      <Spinner className="size-3.5" />
+                      生成中…
+                    </>
+                  ) : (
+                    '生成'
+                  )}
+                </button>
+              </div>
+              <p className="mt-2 text-[10.5px] leading-4 text-muted">
+                AI 会按关键词生成场景、话题和开场白。
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

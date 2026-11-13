@@ -130,12 +130,12 @@ export function HoldToTalk({
         onContextMenu={(event) => event.preventDefault()}
         aria-label="按住说话，上滑取消"
         className={classNames(
-          'flex h-10 flex-1 touch-none select-none items-center justify-center gap-1.5 rounded-full text-[13.5px] font-medium transition',
+          'flex h-10 flex-1 touch-none select-none items-center justify-center gap-1.5 rounded-full text-[13.5px] font-medium transition active:scale-[0.99]',
           pressed
             ? canceling
               ? 'bg-rose-100 text-rose-600 dark:bg-rose-400/15 dark:text-rose-300'
-              : 'bg-brand-soft text-brand'
-            : 'bg-surface2 text-ink active:bg-surface',
+              : 'bg-brand-strong text-white shadow-float dark:text-[#1a1830]'
+            : 'bg-brand text-white shadow-float active:bg-brand-strong dark:text-[#1a1830]',
           busy && 'opacity-60',
         )}
       >

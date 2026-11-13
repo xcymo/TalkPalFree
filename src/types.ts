@@ -20,6 +20,7 @@ export interface TopicDraft {
   title_zh: string;
   prompt_zh: string;
   icebreaker_en: string;
+  icebreaker_zh?: string;
 }
 
 export interface TopicRecord extends TopicDraft {

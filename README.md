@@ -100,7 +100,7 @@ Authorization: Bearer <你的 Key>
 - `response_format: { "type": "json_object" }`
 - `max_completion_tokens: 1800`
 - 系统提示词完整定义了 JSON schema，并要求只输出 JSON。
-- 最近几轮对话会作为真实的 `messages`（`assistant`/`user`）传入，最后一条 user 消息是包含 topic 和本次转写文本的 JSON，从而保持对话连贯。
+- 最近几轮对话会作为真实的 `messages`（`assistant`/`user`）传入；当前话题放在 system 提示词里，最后一条 user 消息只包含本次转写文本的 JSON，避免每轮重复话题、把回复锚回开场。
 
 返回结构（前端会做宽松解析和字段归一化，避免模型偶尔加 markdown 代码块导致白屏）：
 
@@ -235,12 +235,14 @@ localStorage 只存设置：API Key、音色、主题、自动播放。
   titleZh: '一杯有要求的咖啡',
   promptZh: '告诉对方你要点什么，并提出两个具体要求。',
   icebreakerEn: 'Good morning! What can I get started for you?',
+  icebreakerZh: '早上好！想喝点什么？',
 }
 ```
 
 - 每天首次打开 App 时，LLM 会从话题池随机抽 6 个场景作为候选，选一个并细化为当天话题。
 - 没有 API Key 或生成失败时，会直接用内置字段兜底（页面会提示）。
 - 点「换一个」会排除当前话题的 `poolId`，重新请求。
+- 话题卡下方还有一行不显眼的入口「想聊别的？输入关键词生成话题」，输入关键词后会让 LLM 生成一个自定义话题，保存为今天的话题并直接替换卡片内容。
 
 ## 如何调整纠错 schema
 

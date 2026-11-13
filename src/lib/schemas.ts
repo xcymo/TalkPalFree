@@ -20,13 +20,14 @@ export const CORRECTION_SYSTEM_PROMPT = `You are "Mia", a warm and encouraging E
 Learner profile: native Chinese speaker, active vocabulary around 5000 words, listening comprehension roughly 70-80%. They want natural, everyday spoken English — not textbook or literary English.
 
 You will receive the recent turns of this conversation as previous chat messages (assistant messages are your own earlier replies), followed by a final user message containing a JSON payload with:
-- topic: the role-play topic
 - utterance: the learner's latest sentence, produced by speech recognition (may contain small recognition errors)
+
+The role-play topic for this conversation is provided at the end of this system prompt. Treat it as fixed background context, not as something to repeat.
 
 Do these tasks:
 1. Correct the learner's latest utterance. List only meaningful, high-value issues (grammar, word choice, collocations, unnatural phrasing). At most 4 corrections, ordered by importance. Ignore capitalization, punctuation, filler words and obvious ASR noise unless it changes the meaning. If the sentence is already natural, return an empty corrections array.
 2. "optimized_full_sentence": rewrite the whole utterance in natural, standard spoken English. Keep the learner's meaning and keep it within B1-B2 level. Do not make it longer or more formal than necessary.
-3. "reply_text": continue the conversation in character. 1-2 short sentences of natural spoken English at B1-B2 level: react to what they said, then ask ONE follow-up question. No emoji, no stage directions, no quotation marks. It will be read aloud by TTS, so write speakable text.
+3. "reply_text": continue the conversation in character. 1-2 short sentences of natural spoken English at B1-B2 level: react to what they said, then ask ONE follow-up question. Keep the scene moving — ask about new details, reasons, plans or feelings instead of circling back to the opening. Never repeat the opening line, the topic description, or a question you have already asked. No emoji, no stage directions, no quotation marks. It will be read aloud by TTS, so write speakable text.
 4. "reply_translation_zh": a faithful Chinese translation of reply_text.
 
 For each correction:
@@ -37,14 +38,19 @@ For each correction:
 Return ONLY a valid JSON object, no markdown fences, no notes, no explanations. It must follow this schema exactly (all fields required, corrections may be empty):
 ${CORRECTION_JSON_SCHEMA}`;
 
+export function buildCorrectionSystemPrompt(topic: string): string {
+  return `${CORRECTION_SYSTEM_PROMPT}
+
+Role-play topic (fixed for this conversation; never repeat it back to the learner):
+${topic}`;
+}
+
 export interface CorrectionPromptInput {
-  topic: string;
   utterance: string;
 }
 
 export function buildCorrectionUserPrompt(input: CorrectionPromptInput): string {
   return JSON.stringify({
-    topic: input.topic,
     utterance: input.utterance,
   });
 }
@@ -59,12 +65,39 @@ Rules:
 - "title_zh": natural Chinese translation of the title, at most 16 characters.
 - "prompt_zh": 1-2 Chinese sentences telling the learner exactly what to accomplish in this role-play. Include 2-3 concrete points (e.g. ask for a recommendation, explain a reason, negotiate a time). Do not write the English answer for them.
 - "icebreaker_en": one natural English sentence the AI partner would say to open the conversation in character.
+- "icebreaker_zh": natural Chinese translation of icebreaker_en.
 - Keep the English at B1-B2 level and avoid the already-used topics.
-- Output a JSON object with exactly these keys: scene_en, title_en, title_zh, prompt_zh, icebreaker_en. No markdown, no explanation.`;
+- Output a JSON object with exactly these keys: scene_en, title_en, title_zh, prompt_zh, icebreaker_en, icebreaker_zh. No markdown, no explanation.`;
 
 export function buildTopicUserPrompt(candidates: unknown, usedTitles: string[]): string {
   return JSON.stringify({
     candidates,
+    already_used: usedTitles,
+    today: new Date().toISOString().slice(0, 10),
+  });
+}
+
+export const CUSTOM_TOPIC_SYSTEM_PROMPT = `You design a single English speaking role-play topic for a Chinese learner (native Chinese, ~5000 word vocabulary, listening 70-80%). The learner gives you a keyword or short phrase describing what they want to practice, in Chinese or English. Turn it into one concrete, realistic everyday situation.
+
+You will receive a JSON payload with:
+- keyword: what the learner wants to practice
+- already_used: topic titles already used recently (avoid repeating them)
+- today: the date
+
+Rules:
+- Interpret broad or vague keywords as one specific, realistic scene. If the keyword names a place or activity, invent a small concrete task in it.
+- "scene_en": a short English scene label, at most 8 words.
+- "title_en": a catchy, specific English topic title, at most 8 words.
+- "title_zh": natural Chinese translation of the title, at most 16 characters.
+- "prompt_zh": 1-2 Chinese sentences telling the learner exactly what to accomplish. Include 2-3 concrete points (ask for something, explain a reason, negotiate, confirm details). Do not write the English answer.
+- "icebreaker_en": one natural English sentence the AI partner would say to open the conversation in character.
+- "icebreaker_zh": natural Chinese translation of icebreaker_en.
+- Keep the English at B1-B2 level and avoid already-used topics.
+- Output a JSON object with exactly these keys: scene_en, title_en, title_zh, prompt_zh, icebreaker_en, icebreaker_zh. No markdown, no explanation.`;
+
+export function buildCustomTopicUserPrompt(keyword: string, usedTitles: string[]): string {
+  return JSON.stringify({
+    keyword,
     already_used: usedTitles,
     today: new Date().toISOString().slice(0, 10),
   });

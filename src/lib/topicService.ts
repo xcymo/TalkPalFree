@@ -1,4 +1,4 @@
-import { generateDailyTopic } from './api';
+import { generateCustomTopic, generateDailyTopic } from './api';
 import { db, getTodayTopic, saveTodayTopic } from './db';
 import { toDateKey } from './utils';
 import type { TopicRecord } from '../types';
@@ -69,4 +69,27 @@ export async function regenerateTodayTopic(
   };
   await saveTodayTopic(record);
   return { topic: record, warning: generated.warning };
+}
+
+/** 根据用户输入的关键词生成今天的话题；失败时抛错，不回退到内置话题。 */
+export async function generateCustomTodayTopic(
+  apiKey: string,
+  keyword: string,
+  current?: TopicRecord | null,
+): Promise<TopicResult> {
+  const dateKey = toDateKey();
+  const used = await usedTitlesFor(dateKey);
+  if (current) used.push(current.title_en);
+
+  const topic = await generateCustomTopic(apiKey, keyword, used.slice(-10));
+
+  const record: TopicRecord = {
+    dateKey,
+    ...topic,
+    poolId: 'custom',
+    source: 'llm',
+    createdAt: Date.now(),
+  };
+  await saveTodayTopic(record);
+  return { topic: record };
 }

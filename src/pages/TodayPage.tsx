@@ -5,7 +5,7 @@ import type { TopicRecord } from '../types';
 import { db } from '../lib/db';
 import { errorMessage } from '../lib/api';
 import { ensureTodayTopic, generateCustomTodayTopic, regenerateTodayTopic } from '../lib/topicService';
-import { calculateStreak, formatHeaderDate, getGreeting, toDateKey } from '../lib/utils';
+import { calculateStreak, formatHeaderDate, getGreeting, getGreetingAction, toDateKey } from '../lib/utils';
 import { useSettings } from '../hooks/useSettings';
 import { useToast } from '../components/Toast';
 import { TopicCard } from '../components/TopicCard';
@@ -30,6 +30,7 @@ export function TodayPage({ navigate }: TodayPageProps) {
   const [customOpen, setCustomOpen] = useState(false);
   const [customKeyword, setCustomKeyword] = useState('');
   const [customGenerating, setCustomGenerating] = useState(false);
+  const [greetingAction, setGreetingAction] = useState(() => getGreetingAction());
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
@@ -48,6 +49,14 @@ export function TodayPage({ navigate }: TodayPageProps) {
     const observer = new ResizeObserver(apply);
     observer.observe(header);
     return () => observer.disconnect();
+  }, []);
+
+  // 每小时轮换一次问候语；页面持续停留时也会在到期后自动更新
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setGreetingAction(getGreetingAction());
+    }, 60_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const sessions =
@@ -120,7 +129,7 @@ export function TodayPage({ navigate }: TodayPageProps) {
           <header className="pb-4 pt-2">
             <p className="text-[12px] text-muted">{formatHeaderDate()}</p>
             <h1 className="mt-1 text-[25px] font-semibold leading-tight tracking-tight text-ink">
-              {getGreeting()}，来说两句吧
+              {getGreeting()}，{greetingAction}
             </h1>
           </header>
         </div>

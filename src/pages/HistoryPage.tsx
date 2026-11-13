@@ -93,7 +93,7 @@ export function HistoryPage({ navigate }: HistoryPageProps) {
       {sessions.length > 0 && (
         <div
           ref={stickyRef}
-          className="sticky-safe sticky top-0 z-30 -mx-4 transform-gpu bg-bg px-4 pb-3 pt-2"
+          className="fade-header sticky-safe sticky top-0 z-30 -mx-4 transform-gpu px-4 pb-3 pt-2"
         >
           <TopicFilter
             value={topicFilter}
@@ -152,16 +152,11 @@ export function HistoryPage({ navigate }: HistoryPageProps) {
                 <div className="space-y-2">
                   {items.map((group) => {
                     const expanded = expandedKey === group.key;
-                    const first = group.sessions[0];
                     const last = group.sessions[group.sessions.length - 1];
                     const correctionCount = group.sessions.reduce(
                       (total, session) => total + session.corrections.length,
                       0,
                     );
-                    const timeLabel =
-                      group.sessions.length > 1
-                        ? `${formatTime(first.createdAt)} – ${formatTime(last.createdAt)}`
-                        : formatTime(first.createdAt);
 
                     return (
                       <article
@@ -174,9 +169,6 @@ export function HistoryPage({ navigate }: HistoryPageProps) {
                           aria-expanded={expanded}
                           className="flex w-full items-start gap-3 px-4 py-3.5 text-left transition active:bg-surface2"
                         >
-                          <span className="mt-0.5 w-[86px] shrink-0 font-mono text-[10.5px] leading-4 text-muted">
-                            {timeLabel}
-                          </span>
                           <span className="min-w-0 flex-1">
                             <span className="flex flex-wrap items-center gap-1.5">
                               <span className="text-[13px] font-semibold text-ink">
@@ -247,6 +239,8 @@ export function HistoryPage({ navigate }: HistoryPageProps) {
                                     translation={session.replyTranslationZh}
                                     voice={session.voice}
                                     compact
+                                    hideAvatar
+                                    collapsibleTranslation
                                     label="AI 回复"
                                   />
                                 </div>

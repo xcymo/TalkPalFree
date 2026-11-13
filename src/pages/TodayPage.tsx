@@ -115,8 +115,8 @@ export function TodayPage({ navigate }: TodayPageProps) {
 
   return (
     <div ref={rootRef} style={{ paddingTop: contentPad }}>
-      <div ref={headerRef} className="fixed inset-x-0 top-0 z-30 bg-bg">
-        <div className="pt-safe mx-auto w-full max-w-[520px] px-4">
+      <div ref={headerRef} className="fixed inset-x-0 top-0 z-30">
+        <div className="fade-header relative pt-safe mx-auto w-full max-w-[520px] px-4">
           <header className="pb-4 pt-2">
             <p className="text-[12px] text-muted">{formatHeaderDate()}</p>
             <h1 className="mt-1 text-[25px] font-semibold leading-tight tracking-tight text-ink">

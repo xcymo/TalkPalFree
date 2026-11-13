@@ -193,7 +193,7 @@ export function PracticePage({ navigate }: PracticePageProps) {
       ) : topic ? (
         <div
           ref={stickyRef}
-          className="sticky-safe sticky top-0 z-30 -mx-4 transform-gpu bg-bg px-4 pb-3 pt-2"
+          className="fade-header sticky-safe sticky top-0 z-30 -mx-4 transform-gpu px-4 pb-3 pt-2"
         >
           <TopicCard topic={topic} compact />
         </div>

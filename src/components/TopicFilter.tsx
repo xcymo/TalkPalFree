@@ -45,7 +45,7 @@ export function TopicFilter({ value, options, onChange }: TopicFilterProps) {
         aria-expanded={open}
         aria-label="按话题筛选"
         onClick={() => setOpen((current) => !current)}
-        className="flex min-h-[48px] w-full items-center gap-2.5 sticky-radius border border-line bg-surface px-3.5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft active:bg-surface2"
+        className="flex min-h-[48px] w-full items-center gap-2.5 sticky-radius sticky-border sticky-surface border px-3.5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft active:bg-surface2"
       >
         <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand">
           <Filter className="size-3.5" />

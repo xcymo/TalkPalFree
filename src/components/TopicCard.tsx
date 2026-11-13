@@ -47,7 +47,7 @@ export function TopicCard({
 
   if (compact) {
     return (
-      <div className="flex items-center gap-3 sticky-radius border border-line bg-surface px-4 py-3">
+      <div className="flex items-center gap-3 sticky-radius sticky-border sticky-surface border px-4 py-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand">
           <Sparkles className="size-4" />
         </div>

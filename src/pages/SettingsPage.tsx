@@ -100,8 +100,8 @@ export function SettingsPage() {
 
   return (
     <div ref={rootRef} style={{ paddingTop: contentPad }}>
-      <div ref={headerRef} className="fixed inset-x-0 top-0 z-30 bg-bg">
-        <div className="pt-safe mx-auto w-full max-w-[520px] px-4">
+      <div ref={headerRef} className="fixed inset-x-0 top-0 z-30">
+        <div className="fade-header relative pt-safe mx-auto w-full max-w-[520px] px-4">
           <PageHeader title="设置" subtitle="Key 和练习数据都只留在本机浏览器" />
         </div>
       </div>

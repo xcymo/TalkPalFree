@@ -71,6 +71,20 @@ button {
   .sticky-radius {
     border-radius: var(--sticky-radius, 1rem);
   }
+  .sticky-surface {
+    background-color: color-mix(
+      in srgb,
+      var(--surface) var(--sticky-surface-opacity, 100%),
+      transparent
+    );
+  }
+  .sticky-border {
+    border-color: color-mix(
+      in srgb,
+      var(--line) var(--sticky-border-opacity, 100%),
+      transparent
+    );
+  }
   .bg-nav {
     background-color: var(--surface);
     background-color: color-mix(in srgb, var(--surface) 88%, transparent);
@@ -96,18 +110,21 @@ button {
   position: relative;
   isolation: isolate;
   background-color: var(--bg);
-  background-image: radial-gradient(
-    90% 55% at 18% 0%,
-    color-mix(in srgb, var(--brand) 9%, transparent),
-    transparent 70%
+}
+
+.fade-header {
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--bg) 64%, transparent) 0%,
+    color-mix(in srgb, var(--bg) 36%, transparent) 65%,
+    transparent 100%
   );
-  background-repeat: no-repeat;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
 }
 
 .app-pattern::before {
   content: '';
-  position: absolute;
-  inset: 0;
   z-index: -1;
   display: none;
   background-image: linear-gradient(135deg, #4f46e5, #7c3aed 55%, #d946ef);
@@ -119,6 +136,36 @@ button {
   mask-repeat: repeat;
   opacity: 0.14;
   pointer-events: none;
+}
+
+/* 页面背景固定在视口上，不随内容滚动 */
+.app-pattern::before {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 100%;
+  max-width: 520px;
+  transform: translateX(-50%);
+}
+
+.app-pattern::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 100%;
+  max-width: 520px;
+  transform: translateX(-50%);
+  z-index: -2;
+  pointer-events: none;
+  background-image: radial-gradient(
+    90% 55% at 18% 0%,
+    color-mix(in srgb, var(--brand) 9%, transparent),
+    transparent 70%
+  );
+  background-repeat: no-repeat;
 }
 
 @supports ((mask-image: url('/pattern.svg')) or (-webkit-mask-image: url('/pattern.svg'))) {

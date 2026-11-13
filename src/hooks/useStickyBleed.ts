@@ -19,8 +19,10 @@ export function useStickyBleed<T extends HTMLElement>(threshold = 100) {
       const padding = 16 * (1 - progress);
       element.style.paddingLeft = `${padding}px`;
       element.style.paddingRight = `${padding}px`;
-      // 宽度铺满的同时把圆角收掉，避免四个角露出底色
+      // 宽度铺满的同时把圆角、底色和边框一起收掉
       element.style.setProperty('--sticky-radius', `${padding}px`);
+      element.style.setProperty('--sticky-surface-opacity', `${Math.round((1 - progress) * 100)}%`);
+      element.style.setProperty('--sticky-border-opacity', `${Math.round((1 - progress) * 100)}%`);
     };
 
     const onScroll = () => {

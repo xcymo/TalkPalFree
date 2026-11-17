@@ -24,6 +24,8 @@ You will receive the recent turns of this conversation as previous chat messages
 
 The role-play topic for this conversation is provided at the end of this system prompt. Treat it as fixed background context, not as something to repeat.
 
+The learner always starts the dialogue. Respond in character to their latest line; never open the conversation for them or write lines the learner should say.
+
 Do these tasks:
 1. Correct the learner's latest utterance. List only meaningful, high-value issues (grammar, word choice, collocations, unnatural phrasing). At most 4 corrections, ordered by importance. Ignore capitalization, punctuation, filler words and obvious ASR noise unless it changes the meaning. If the sentence is already natural, return an empty corrections array.
 2. "optimized_full_sentence": rewrite the whole utterance in natural, standard spoken English. Keep the learner's meaning and keep it within B1-B2 level. Do not make it longer or more formal than necessary.
@@ -55,24 +57,37 @@ export function buildCorrectionUserPrompt(input: CorrectionPromptInput): string 
   });
 }
 
-export const TOPIC_SYSTEM_PROMPT = `You design daily English speaking role-play topics for a Chinese learner (native Chinese, ~5000 word vocabulary, listening 70-80%). The goal is to make them speak natural everyday English.
+export const BATCH_TOPIC_SYSTEM_PROMPT = `You design fresh English speaking role-play topics for a Chinese learner (native Chinese, ~5000 word vocabulary, listening 70-80%). You may be asked for several topics at once.
 
-You will receive a list of candidate scenes and a list of topics already used. Choose ONE scene (or combine the spirit of one with a small, realistic twist) and design a specific speaking task.
+You will receive a JSON payload with:
+- count: how many topics to create
+- recently_used: topics used recently, formatted as "title — scene — tags"
+- queued: topics already queued for future days
+- today: the date
 
 Rules:
+- Create exactly count topics.
+- Every topic must be clearly different from every other topic in the batch and from everything in recently_used and queued: vary the setting, relationship, communicative goal and constraint. Do not reuse a title or a scene.
+- Each must be a concrete, realistic everyday situation. Vary locations, social roles and tasks; avoid generic classroom exercises.
+- Use B1-B2 English and natural spoken English.
 - "scene_en": a short English scene label, at most 8 words.
-- "title_en": a catchy, specific English topic title, at most 8 words. Not generic ("Practice English") — it should sound like a real situation.
+- "title_en": a catchy, specific English title, at most 8 words.
 - "title_zh": natural Chinese translation of the title, at most 16 characters.
-- "prompt_zh": 1-2 Chinese sentences telling the learner exactly what to accomplish in this role-play. Include 2-3 concrete points (e.g. ask for a recommendation, explain a reason, negotiate a time). Do not write the English answer for them.
-- "icebreaker_en": one natural English sentence the AI partner would say to open the conversation in character.
+- "prompt_zh": 1-2 Chinese sentences telling the learner exactly what to accomplish; include 2-3 concrete points. Do not write the English answer.
+- "icebreaker_en": one natural English opening sentence the LEARNER could say to start this role-play in character, addressed to the AI partner. It must fit the learner's role, not the AI's.
 - "icebreaker_zh": natural Chinese translation of icebreaker_en.
-- Keep the English at B1-B2 level and avoid the already-used topics.
-- Output a JSON object with exactly these keys: scene_en, title_en, title_zh, prompt_zh, icebreaker_en, icebreaker_zh. No markdown, no explanation.`;
+- "tags": 3-5 short lowercase English tags describing the setting, goal, relationship or constraint (e.g. "airport", "lost-luggage", "airline-staff").
+- Output ONLY a JSON object: {"topics":[{"scene_en":"...","title_en":"...","title_zh":"...","prompt_zh":"...","icebreaker_en":"...","icebreaker_zh":"...","tags":["..."]}]}. No markdown, no explanation.`;
 
-export function buildTopicUserPrompt(candidates: unknown, usedTitles: string[]): string {
+export function buildBatchTopicUserPrompt(
+  count: number,
+  recentlyUsed: string[],
+  queued: string[],
+): string {
   return JSON.stringify({
-    candidates,
-    already_used: usedTitles,
+    count,
+    recently_used: recentlyUsed,
+    queued,
     today: new Date().toISOString().slice(0, 10),
   });
 }
@@ -90,7 +105,7 @@ Rules:
 - "title_en": a catchy, specific English topic title, at most 8 words.
 - "title_zh": natural Chinese translation of the title, at most 16 characters.
 - "prompt_zh": 1-2 Chinese sentences telling the learner exactly what to accomplish. Include 2-3 concrete points (ask for something, explain a reason, negotiate, confirm details). Do not write the English answer.
-- "icebreaker_en": one natural English sentence the AI partner would say to open the conversation in character.
+- "icebreaker_en": one natural English opening sentence the LEARNER could say to start this role-play in character, addressed to the AI partner. It must fit the learner's role, not the AI's.
 - "icebreaker_zh": natural Chinese translation of icebreaker_en.
 - Keep the English at B1-B2 level and avoid already-used topics.
 - Output a JSON object with exactly these keys: scene_en, title_en, title_zh, prompt_zh, icebreaker_en, icebreaker_zh. No markdown, no explanation.`;

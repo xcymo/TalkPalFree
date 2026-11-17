@@ -167,7 +167,7 @@ IndexedDB 数据库名：`spoken-english`（Dexie，定义在 `src/lib/db.ts`）
 | `topics` | `dateKey`（`YYYY-MM-DD`） | 当天话题，每天一条 |
 | `sessions` | 自增 `id` + `dateKey` / `topicId` 索引 | 每一轮练习：原文、纠错、优化句、AI 回复、音色、TTS 缓存 key、时间。历史页会把同一天同一话题的多轮合并为一条记录 |
 | `audioCache` | `key` | TTS 音频 Blob 及其文本 / 音色 |
-| `meta` | `key` | 用量与计费明细：LLM 输入/缓存/输出 tokens、ASR 请求次数与音频秒数、TTS 字符数（`usage:total`、`usage:YYYY-MM-DD`） |
+| `meta` | `key` | 用量与计费明细（`usage:*`）以及 AI 话题队列（`topic:queue`，未来几天待用的话题） |
 
 localStorage 只存设置：API Key、音色、主题、自动播放。
 
@@ -214,7 +214,7 @@ localStorage 只存设置：API Key、音色、主题、自动播放。
    │  ├─ models.ts             # Base URL、模型名、录音限制、纠错类型配色
    │  └─ voices.ts             # 音色集中配置
    ├─ data/
-   │  └─ topics.ts             # 24 个内置话题池 + 兜底逻辑
+   │  └─ topics.ts             # 24 个内置兜底话题 + 风格示例
    ├─ hooks/
    │  ├─ useHashRoute.ts       # #/today | #/practice | #/history | #/settings
    │  ├─ usePractice.tsx       # App 级练习流程（切换页面不中断 ASR/LLM）
@@ -243,24 +243,28 @@ localStorage 只存设置：API Key、音色、主题、自动播放。
 
 ## 如何新增话题
 
-编辑 `src/data/topics.ts`，往 `TOPIC_POOL` 数组追加一项，字段全部必填：
+内置话题池现在主要作为**兜底和风格示例**，每日话题由 AI 自行生成。编辑 `src/data/topics.ts`，往 `TOPIC_POOL` 数组追加一项，字段全部必填：
 
 ```ts
 {
-  id: 'unique-id',                    // 唯一，用于「换一个」时避让
+  id: 'unique-id',                    // 唯一，用于兜底场景避让
   scene: 'Ordering coffee',           // 英文场景（≤8 词）
   sceneZh: '咖啡店点单',
   titleEn: 'A complicated coffee order',
   titleZh: '一杯有要求的咖啡',
   promptZh: '告诉对方你要点什么，并提出两个具体要求。',
-  icebreakerEn: 'Good morning! What can I get started for you?',
-  icebreakerZh: '早上好！想喝点什么？',
+  icebreakerEn: 'Hi, could I get a latte with oat milk and less sugar?',
+  icebreakerZh: '你好，可以给我一杯燕麦奶、少糖的拿铁吗？',
 }
 ```
 
-- 每天首次打开 App 时，LLM 会从话题池随机抽 6 个场景作为候选，选一个并细化为当天话题。
-- 没有 API Key 或生成失败时，会直接用内置字段兜底（页面会提示）。
-- 点「换一个」会排除当前话题的 `poolId`，重新请求。
+- `icebreaker_en` / `icebreaker_zh` 是「由谁先说」的开场白，用 `icebreaker_role` 区分：
+  - `'learner'`（内置话题池和新生成的话题都用这个）：练习页把它显示成「开场提示 · 你可以这样说」，不会进入 LLM 历史；用户真正说出（或写出）第一句后，AI 才在同一轮里生成纠错和回复。
+  - `'assistant'`（旧版本保存的话题没有该字段，按此处理）：开场白就是 AI 的第一条消息，直接展示在聊天里，并作为 assistant 消息进入 LLM 历史。
+- 每天首次打开 App 时，会从本地话题队列取一个 AI 生成的话题；队列为空或只剩 2 个时，后台一次批量生成 8 个全新话题。
+- 批量生成会把最近 60 个话题的标题、场景和标签作为去重上下文，并在本地再过滤一遍重复或高度相似的话题。
+- 没有 API Key 或批量生成失败时，会从内置话题池取一个最近没用过的场景兜底（页面会提示）。
+- 点「换一个」会立即取队列里的下一个话题；队列为空时才触发生成，正常情况下不需要等 LLM。
 - 话题卡下方还有一行不显眼的入口「想聊别的？输入关键词生成话题」，输入关键词后会让 LLM 生成一个自定义话题，保存为今天的话题并直接替换卡片内容。
 
 ## 如何调整纠错 schema
@@ -307,7 +311,7 @@ localStorage 只存设置：API Key、音色、主题、自动播放。
 1. **录音 → ASR → 纠错 → TTS 完整流程**：已实现。录音经 Web Audio 转 16 kHz WAV，ASR 结果自动进入 LLM，结果页渲染纠错与 AI 回复，TTS 可播放。使用真实 Key 即可走通；开发时已用 Chrome 假麦克风 + mock API 跑通全流程。
 2. **同一回复第二次播放不重复请求 TTS**：是。音频 Blob 按 `voice + 文本 hash` 存入 IndexedDB；首次播放触发 1 次 TTS 请求，暂停后再次播放或播放结束后重新播放都直接使用本地音频，不会重复请求。
 3. **纠错 JSON 能被解析并渲染为卡片**：是。兼容纯 JSON、```json 代码块、前后夹杂说明文字；字段非法时归一化，缺失 `reply_text` 会给出友好错误而非崩溃。
-4. **话题每天自动生成一次 + 手动换一个**：是。`topics` 表按本地日期存一条；首次打开（今日或练习页）生成并保存，刷新不会重复请求；「换一个」才会重新请求并避让当前场景。
+4. **话题每天自动生成一次 + 手动换一个**：是。`topics` 表按本地日期存一条；每日从本地队列取一个 AI 话题，队列只剩 2 个时后台预生成 8 个；「换一个」立即从队列取下一个，不需要等 LLM。
 5. **API 错误友好降级**：是。401/403 提示检查 Key，402 提示余额，429 提示频率/额度，5xx 与网络失败、超时均有中文提示；结果页不会白屏。已验证 401 场景。
 6. **移动端无横向滚动 + 底部导航不遮挡**：是。390px 视口实测 `scrollWidth === clientWidth`；内容区 `pb-28` 并适配 safe-area。
 7. **历史记录刷新不丢、按日期可追溯**：是。每轮结果写入 IndexedDB，刷新/重开浏览器仍在；历史页按日期分组，同一天同一话题的多轮对话合并成一条记录，展开即可逐轮查看原句、纠错和回复并播放，也支持按话题筛选。

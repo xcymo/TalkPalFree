@@ -94,7 +94,9 @@ export function TopicCard({
                 {topic.icebreaker_en}
               </p>
             </div>
-            <p className="mt-1 pl-[22px] text-[11px] text-muted">AI 会用这句话开启对话</p>
+            <p className="mt-1 pl-[22px] text-[11px] text-muted">
+              {topic.icebreaker_role === 'learner' ? '你可以用这句话开场' : 'AI 会先用这句话开场'}
+            </p>
           </div>
         )}
 

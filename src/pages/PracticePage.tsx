@@ -14,6 +14,7 @@ import { PageHeader } from '../components/PageHeader';
 import { TopicCard } from '../components/TopicCard';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { PracticeChat } from '../components/PracticeChat';
+import { OpeningHint } from '../components/OpeningHint';
 import { EmptyState } from '../components/EmptyState';
 import { HoldToTalk } from '../components/HoldToTalk';
 import { classNames } from '../lib/utils';
@@ -127,6 +128,9 @@ export function PracticePage({ navigate }: PracticePageProps) {
   }, [rounds, error]);
 
   const busy = stage !== 'idle';
+  // 旧话题没有 role 字段，按“AI 先开口”处理；learner 视角的开场语只是提示，不进聊天。
+  const assistantOpening =
+    topic?.icebreaker_en && topic.icebreaker_role !== 'learner' ? topic.icebreaker_en : null;
 
   const handleBeforeStart = () => {
     reportError(null);
@@ -214,7 +218,20 @@ export function PracticePage({ navigate }: PracticePageProps) {
         />
       )}
 
-      {(rounds.length > 0 || stage !== 'idle' || Boolean(topic?.icebreaker_en)) && (
+      {topic?.icebreaker_role === 'learner' &&
+        topic.icebreaker_en &&
+        rounds.length === 0 &&
+        stage === 'idle' && (
+          <div className="mt-4">
+            <OpeningHint
+              text={topic.icebreaker_en}
+              translation={topic.icebreaker_zh}
+              voice={settings.voice}
+            />
+          </div>
+        )}
+
+      {(rounds.length > 0 || stage !== 'idle' || assistantOpening) && (
         <div className="mt-4">
           <PracticeChat
             rounds={rounds}
@@ -222,8 +239,8 @@ export function PracticePage({ navigate }: PracticePageProps) {
             onAutoPlayed={handleAutoPlayed}
             pendingUserText={pendingUserText}
             stage={stage}
-            openingText={topic?.icebreaker_en}
-            openingTranslation={topic?.icebreaker_zh}
+            openingText={assistantOpening ?? undefined}
+            openingTranslation={assistantOpening ? topic?.icebreaker_zh : undefined}
             voice={settings.voice}
           />
         </div>

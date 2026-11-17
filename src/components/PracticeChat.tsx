@@ -11,9 +11,10 @@ interface PracticeChatProps {
   onAutoPlayed: () => void;
   pendingUserText: string | null;
   stage: PracticeStage;
+  /** AI 先开口的话题：开场白作为第一条 AI 消息展示，同样进入 LLM 历史。 */
   openingText?: string;
   openingTranslation?: string;
-  voice: string;
+  voice?: string;
 }
 
 /** 连续的对话记录：你的消息靠右，AI 回复靠左，不做轮次分组。 */
@@ -29,16 +30,16 @@ export function PracticeChat({
 }: PracticeChatProps) {
   return (
     <div className="space-y-3">
-      {openingText && (
+      {openingText && rounds.length === 0 && voice && (
         <div className="flex justify-start animate-fade-up">
           <div className="w-fit min-w-0 max-w-[94%]">
             <ReplyCard
               text={openingText}
               translation={openingTranslation}
               voice={voice}
+              label="AI 开场"
               hideAvatar
               collapsibleTranslation
-              label="开场白"
             />
           </div>
         </div>

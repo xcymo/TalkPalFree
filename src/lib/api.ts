@@ -1,16 +1,15 @@
 import { API_BASE_URL, MODELS } from '../config/models';
-import { pickRandomPoolItems, type TopicPoolItem } from '../data/topics';
 import type { Correction, CorrectionResult, CorrectionType, TopicDraft } from '../types';
 import { blobToBase64, base64ToBlob, getWavDurationSeconds } from './audio';
 import { getTtsBlob, putTtsBlob, trackUsage } from './db';
 import {
+  BATCH_TOPIC_SYSTEM_PROMPT,
   CUSTOM_TOPIC_SYSTEM_PROMPT,
-  TOPIC_SYSTEM_PROMPT,
   TTS_STYLE_INSTRUCTION,
+  buildBatchTopicUserPrompt,
   buildCorrectionSystemPrompt,
   buildCorrectionUserPrompt,
   buildCustomTopicUserPrompt,
-  buildTopicUserPrompt,
 } from './schemas';
 import { ttsCacheKey } from './utils';
 import { cleanTranscript } from './transcript';
@@ -296,92 +295,75 @@ export async function correctAndReply({
   };
 }
 
-export interface GeneratedTopic {
-  topic: TopicDraft;
-  poolId: string;
-  source: 'llm' | 'fallback';
-  warning?: string;
+function normalizeTagList(value: unknown): string[] {
+  const raw = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(/[,，]/)
+      : [];
+  const tags = raw
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  return Array.from(new Set(tags)).slice(0, 5);
 }
 
-function fallbackTopic(item: TopicPoolItem): GeneratedTopic {
+function normalizeTopicDraft(value: unknown): TopicDraft | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Partial<TopicDraft>;
+  const title = typeof raw.title_en === 'string' ? raw.title_en.trim() : '';
+  const titleZh = typeof raw.title_zh === 'string' ? raw.title_zh.trim() : '';
+  const prompt = typeof raw.prompt_zh === 'string' ? raw.prompt_zh.trim() : '';
+  if (!title || !titleZh || !prompt) return null;
+  const scene = typeof raw.scene_en === 'string' ? raw.scene_en.trim() : '';
   return {
-    source: 'fallback',
-    poolId: item.id,
-    topic: {
-      scene_en: item.scene,
-      title_en: item.titleEn,
-      title_zh: item.titleZh,
-      prompt_zh: item.promptZh,
-      icebreaker_en: item.icebreakerEn,
-      icebreaker_zh: item.icebreakerZh,
-    },
+    scene_en: scene || title,
+    title_en: title,
+    title_zh: titleZh,
+    prompt_zh: prompt,
+    icebreaker_en: typeof raw.icebreaker_en === 'string' ? raw.icebreaker_en.trim() : '',
+    icebreaker_zh: typeof raw.icebreaker_zh === 'string' ? raw.icebreaker_zh.trim() : '',
+    icebreaker_role: 'learner',
+    tags: normalizeTagList(raw.tags),
   };
 }
 
-export async function generateDailyTopic(
+/** Generate a batch of AI-invented topics to queue for future days. */
+export async function generateTopicBatch(
   apiKey: string,
-  usedTitles: string[] = [],
-  excludePoolIds: string[] = [],
-): Promise<GeneratedTopic> {
-  const candidates = pickRandomPoolItems(6, excludePoolIds);
+  recentlyUsed: string[],
+  queued: string[],
+  count = 8,
+): Promise<TopicDraft[]> {
+  const data = await chatRequest(
+    apiKey,
+    {
+      model: MODELS.llm,
+      messages: [
+        { role: 'system', content: BATCH_TOPIC_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: buildBatchTopicUserPrompt(count, recentlyUsed.slice(-60), queued.slice(-20)),
+        },
+      ],
+      response_format: { type: 'json_object' },
+      thinking: { type: 'disabled' },
+      max_completion_tokens: 4000,
+    },
+    90_000,
+  );
 
-  if (!apiKey.trim()) {
-    return {
-      ...fallbackTopic(candidates[0]),
-      warning: '未填写 API Key，先使用内置话题。填写后可让 AI 生成更贴合的话题。',
-    };
+  await trackLlmUsage(data.usage as LlmUsagePayload | undefined);
+
+  const parsed = parseJsonLoose<{ topics?: unknown }>(extractMessageText(data));
+  if (!Array.isArray(parsed.topics)) {
+    throw new ApiError('invalid topic batch', 'AI 返回的话题列表格式异常，请稍后重试。');
   }
 
-  try {
-    const data = await chatRequest(
-      apiKey,
-      {
-        model: MODELS.llm,
-        messages: [
-          { role: 'system', content: TOPIC_SYSTEM_PROMPT },
-          { role: 'user', content: buildTopicUserPrompt(candidates, usedTitles.slice(-8)) },
-        ],
-        response_format: { type: 'json_object' },
-        thinking: { type: 'disabled' },
-        max_completion_tokens: 700,
-      },
-      60_000,
-    );
-
-    await trackLlmUsage(data.usage as LlmUsagePayload | undefined);
-
-    const parsed = parseJsonLoose<Partial<TopicDraft>>(extractMessageText(data));
-    if (!parsed.title_en || !parsed.title_zh || !parsed.prompt_zh) {
-      throw new ApiError('invalid topic', '话题生成结果不完整');
-    }
-
-    const matched =
-      candidates.find((item) => item.scene.toLowerCase() === String(parsed.scene_en ?? '').toLowerCase()) ??
-      candidates.find((item) =>
-        String(parsed.scene_en ?? '')
-          .toLowerCase()
-          .includes(item.scene.split(' ')[0].toLowerCase()),
-      ) ??
-      candidates[0];
-
-    return {
-      source: 'llm',
-      poolId: matched.id,
-      topic: {
-        scene_en: parsed.scene_en?.trim() || matched.scene,
-        title_en: parsed.title_en.trim(),
-        title_zh: parsed.title_zh.trim(),
-        prompt_zh: parsed.prompt_zh.trim(),
-        icebreaker_en: parsed.icebreaker_en?.trim() || matched.icebreakerEn,
-        icebreaker_zh: parsed.icebreaker_zh?.trim() || matched.icebreakerZh,
-      },
-    };
-  } catch (error) {
-    return {
-      ...fallbackTopic(candidates[0]),
-      warning: `AI 话题生成失败，已使用内置话题。（${errorMessage(error)}）`,
-    };
-  }
+  return parsed.topics
+    .map(normalizeTopicDraft)
+    .filter((item): item is TopicDraft => item !== null)
+    .slice(0, count);
 }
 
 export async function generateCustomTopic(
@@ -418,6 +400,7 @@ export async function generateCustomTopic(
     prompt_zh: parsed.prompt_zh.trim(),
     icebreaker_en: parsed.icebreaker_en?.trim() || '',
     icebreaker_zh: parsed.icebreaker_zh?.trim() || '',
+    icebreaker_role: 'learner',
   };
 }
 

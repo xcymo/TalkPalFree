@@ -21,6 +21,19 @@ export interface TopicDraft {
   prompt_zh: string;
   icebreaker_en: string;
   icebreaker_zh?: string;
+  /**
+   * Who speaks icebreaker_en first.
+   * - 'learner': a hint for the learner's opening line (not sent to the LLM history).
+   * - 'assistant' (or missing on old records): the AI's opening message, included in history.
+   */
+  icebreaker_role?: 'learner' | 'assistant';
+  /** 3-5 short English tags used to detect similar topics. */
+  tags?: string[];
+}
+
+/** AI-generated topic waiting in the local queue for a future day. */
+export interface QueuedTopic extends TopicDraft {
+  queuedAt: number;
 }
 
 export interface TopicRecord extends TopicDraft {

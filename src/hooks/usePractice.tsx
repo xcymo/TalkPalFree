@@ -135,7 +135,8 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
   const submitUtterance = useCallback(
     async (currentTopic: TopicRecord, currentSettings: Settings, userText: string) => {
       const history: { role: 'user' | 'assistant'; content: string }[] = [];
-      if (currentTopic.icebreaker_en) {
+      // AI 开场的话题：开场白是第一条 assistant 消息；learner 视角的开场只是提示，不进历史。
+      if (currentTopic.icebreaker_en && currentTopic.icebreaker_role !== 'learner') {
         history.push({ role: 'assistant', content: currentTopic.icebreaker_en });
       }
       for (const round of roundsRef.current) {

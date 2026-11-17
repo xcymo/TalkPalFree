@@ -1,11 +1,14 @@
 import Dexie, { type Table } from 'dexie';
 import type {
   AudioCacheRecord,
+  QueuedTopic,
   SessionRecord,
   TopicRecord,
   UsageRecord,
 } from '../types';
 import { toDateKey } from './utils';
+
+const TOPIC_QUEUE_KEY = 'topic:queue';
 
 class SpokenEnglishDB extends Dexie {
   topics!: Table<TopicRecord, string>;
@@ -32,6 +35,15 @@ export async function getTodayTopic(dateKey = toDateKey()): Promise<TopicRecord 
 
 export async function saveTodayTopic(topic: TopicRecord): Promise<void> {
   await db.topics.put(topic);
+}
+
+export async function getTopicQueue(): Promise<QueuedTopic[]> {
+  const value = (await db.meta.get(TOPIC_QUEUE_KEY))?.value;
+  return Array.isArray(value) ? (value as QueuedTopic[]) : [];
+}
+
+export async function saveTopicQueue(queue: QueuedTopic[]): Promise<void> {
+  await db.meta.put({ key: TOPIC_QUEUE_KEY, value: queue });
 }
 
 export async function addSession(session: Omit<SessionRecord, 'id'>): Promise<number> {

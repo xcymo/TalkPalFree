@@ -6,10 +6,12 @@ import {
   EyeOff,
   ExternalLink,
   Gauge,
+  Github,
   Info,
   KeyRound,
   Monitor,
   Moon,
+  PlayCircle,
   ShieldCheck,
   Sun,
   Trash2,
@@ -247,6 +249,7 @@ export function SettingsPage() {
       <Section
         title="自动播放 AI 回复"
         description="每轮结果出来后自动播放语音；如果浏览器拦截，可手动点击播放。"
+        icon={PlayCircle}
       >
         <div className="flex items-center justify-between">
           <span className="text-[13px] text-ink">自动播放</span>
@@ -346,6 +349,25 @@ export function SettingsPage() {
         </p>
       </Section>
 
+      <Section title="开源说明" icon={Github}>
+        <a
+          href="https://github.com/xcymo/TalkPalFree"
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-3 rounded-2xl border border-line bg-surface2 px-3.5 py-3 transition active:bg-surface"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-1 text-[13px] font-semibold text-ink">
+              xcymo / TalkPalFree
+              <ExternalLink className="size-3 text-muted" />
+            </p>
+            <p className="mt-0.5 text-[11px] leading-5 text-muted">
+              TalkPalFree 完全开源，欢迎查看源码、提交反馈或参与改进。
+            </p>
+          </div>
+        </a>
+      </Section>
+
       <ConfirmDialog
         open={confirmOpen}
         title="清除所有本地数据？"
@@ -372,16 +394,20 @@ function Section({
 }) {
   return (
     <section className="mb-3.5 rounded-3xl border border-line bg-surface p-4 shadow-card">
-      <div className="mb-3 flex items-start gap-2">
-        {Icon && (
-          <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand">
-            <Icon className="size-3.5" />
-          </span>
-        )}
-        <div>
-          <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
-          {description && <p className="mt-1 text-[11px] leading-5 text-muted">{description}</p>}
+      <div className="mb-3">
+        <div className="flex items-start gap-2">
+          {Icon && (
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-brand-soft text-brand">
+              <Icon className="size-3" />
+            </span>
+          )}
+          <h2 className="flex min-h-5 min-w-0 flex-1 items-center text-[13px] font-semibold text-ink">
+            {title}
+          </h2>
         </div>
+        {description && (
+          <p className="mt-1 text-[11px] leading-5 text-muted">{description}</p>
+        )}
       </div>
       {children}
     </section>

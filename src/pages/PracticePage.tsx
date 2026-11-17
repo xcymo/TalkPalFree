@@ -156,12 +156,15 @@ export function PracticePage({ navigate }: PracticePageProps) {
     if (mode === 'voice') textareaRef.current?.blur();
   };
 
-  // 切到文字输入后聚焦输入框（放在 effect 里，保证 textarea 已经挂载）
+  // 切到文字输入后聚焦输入框（放在 effect 里，保证 textarea 已经挂载）。
+  // 移动端聚焦会立刻弹出键盘，所以要等图层切换动画（200ms）结束再聚焦，否则看不到过渡动画。
   useEffect(() => {
-    if (inputMode === 'text' && focusTextRef.current) {
-      focusTextRef.current = false;
+    if (inputMode !== 'text' || !focusTextRef.current) return;
+    focusTextRef.current = false;
+    const timer = window.setTimeout(() => {
       textareaRef.current?.focus();
-    }
+    }, 260);
+    return () => window.clearTimeout(timer);
   }, [inputMode]);
 
   // 非当前模式的图层设为 inert，避免隐藏的控件还能被点击或聚焦
